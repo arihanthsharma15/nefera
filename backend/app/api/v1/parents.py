@@ -13,7 +13,7 @@ router = APIRouter(prefix="/parents", tags=["parents"])
 
 @router.get("/dashboard")
 def parent_dashboard(
-    days: int = 30,
+    days: int = 7,
     db: Session = Depends(get_db),
     _payload = Depends(require_demo(ROLES["PARENT"])),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PARENT"])),
@@ -58,10 +58,23 @@ def parent_dashboard(
         mood: round(count / total * 100, 1) for mood, count in mood_counts
     }
 
+
+    internal_risk = student.risk_status
+
+    # Parent-facing mapping
+    if internal_risk == "CRISIS":
+        display_risk = "CONTACT_SCHOOL"  # frontend: "Please contact school counselor"
+    else:
+        display_risk = internal_risk
+
     return {
         "student_id": student.id,
         "class_name": classroom.name if classroom else None,
-        "risk_status": student.risk_status,
+        "risk_status": display_risk,
         "streak_count": student.streak_count,
         "mood_distribution": mood_distribution,
+        "risk_status_note": (
+        "Risk status is calculated mainly from the child's private journal entries "
+        "If you see 'CONTACT_SCHOOL', please reach out to the school counselor for more information and support."
+    ),
     }

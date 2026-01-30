@@ -10,48 +10,90 @@ from app import models
 def main():
     db: Session = SessionLocal()
 
-    # 1) Demo school
-    school = models.School(name="Demo School")
-    db.add(school)
-    db.flush()
+    print("🌱 Seeding Data...")
 
-    # 2) Demo class
-    classroom = models.Class(name="10-A", school_id=school.id)
-    db.add(classroom)
-    db.flush()
+    # 1) Get or Create School
+    school = db.query(models.School).filter_by(name="Demo School").first()
+    if not school:
+        school = models.School(name="Demo School")
+        db.add(school)
+        db.commit()
+        db.refresh(school)
+        print(f"✅ Created School: ID {school.id}")
+    else:
+        print(f"ℹ️ School already exists: ID {school.id}")
 
-    # 3) Demo student user
+    # 2) Get or Create Class
+    classroom = (
+        db.query(models.Class)
+        .filter_by(name="10-A", school_id=school.id)
+        .first()
+    )
+    if not classroom:
+        classroom = models.Class(name="10-A", school_id=school.id)
+        db.add(classroom)
+        db.commit()
+        db.refresh(classroom)
+        print(f"✅ Created Class: ID {classroom.id}")
+    else:
+        print(f"ℹ️ Class already exists: ID {classroom.id}")
+
+    # 3) Get or Create PRINCIPAL user
+    principal_email = "principal@demo.com"
+    principal_user = db.query(models.User).filter_by(email=principal_email).first()
+
+    if not principal_user:
+        principal_user = models.User(
+            email=principal_email,
+            hashed_password=None,  # Supabase/auth backend handle karega
+            role=models.UserRole.PRINCIPAL,
+            school_id=school.id,
+            full_name="Demo Principal",
+        )
+        db.add(principal_user)
+        db.commit()
+        db.refresh(principal_user)
+        print(f"✅ Created Principal: ID {principal_user.id}")
+    else:
+        print(f"ℹ️ Principal already exists: ID {principal_user.id}")
+
+    # 4) Get or Create STUDENT user
     student_email = "student1@demo.com"
+    user = db.query(models.User).filter_by(email=student_email).first()
 
-    user = models.User(
-        email=student_email,
-        hashed_password=None,
-        role=models.UserRole.STUDENT,
-        school_id=school.id,
-    )
-    db.add(user)
-    db.flush()  # id mil jayega
+    if not user:
+        user = models.User(
+            email=student_email,
+            hashed_password=None,
+            role=models.UserRole.STUDENT,
+            school_id=school.id,
+            full_name="Demo Student",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        print(f"✅ Created Student User: ID {user.id}")
+    else:
+        print(f"ℹ️ Student User already exists: ID {user.id}")
 
-    # 4) Student profile
-    profile = models.StudentProfile(
-        user_id=user.id,
-        class_id=classroom.id,
-        risk_status="GREEN",
-        streak_count=0,
-    )
-    db.add(profile)
-    db.flush()  # profile.id bhi mil jayega
+    # 5) Get or Create StudentProfile
+    profile = db.query(models.StudentProfile).filter_by(user_id=user.id).first()
+    if not profile:
+        profile = models.StudentProfile(
+            user_id=user.id,
+            class_id=classroom.id,
+            risk_status="GREEN",
+            streak_count=0,
+            roll_number="1",
+        )
+        db.add(profile)
+        db.commit()
+        print(f"✅ Created Student Profile for User ID {user.id}")
+    else:
+        print(f"ℹ️ Student Profile already exists")
 
-    # ✅ IDs ko yahin store kar lo, session close ke baad use nahi karna
-    user_id = user.id
-    profile_id = profile.id
-
-    db.commit()
     db.close()
-
-    print("✅ Seeded student:")
-    print(f"  email = {student_email}")
-    print(f"  user_id = {user_id}, student_profile_id = {profile_id}")
+    print("✨ Seeding Complete!")
 
 if __name__ == "__main__":
     main()

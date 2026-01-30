@@ -21,3 +21,14 @@ HEADERS = {
     "DEMO_TOKEN": "x-nefera-demo-token",
     "ENTRYPOINT": "x-nefera-entrypoint",
 }
+
+CHECKIN_TRIGGER_TAGS = [
+    "ACADEMIC_PRESSURE",
+    "SLEEP_ISSUES",
+    "PEER_CONFLICT",
+    "FAMILY_ISSUES",
+    "SOCIAL_MEDIA",
+    "BULLYING",
+    "HEALTH_ISSUES",
+]
+

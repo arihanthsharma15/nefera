@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
-
+from app import models, schemas
+from typing import List
 from app.db.base import get_db
 from app import models
 from app.core.deps.auth import require_demo
@@ -214,3 +215,33 @@ def get_student_detail(
     "recent_moods": recent_moods,
     "assessments": assessments_out,
 }
+
+@router.get("/reports", response_model=List[schemas.IncidentReportOut])
+def get_incident_reports_for_counselor(
+    db: Session = Depends(get_db),
+    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
+):
+    
+
+    reports = (
+        db.query(models.IncidentReport)
+        .join(models.Class, models.IncidentReport.class_id == models.Class.id)
+        .order_by(models.IncidentReport.created_at.desc())
+        .all()
+    )
+
+    result = []
+    for r in reports:
+        result.append(
+            schemas.IncidentReportOut(
+                id=r.id,
+                incident_type=r.type.value,
+                description=r.description,
+                status=r.status.value,
+                class_name=r.classroom.name if r.classroom else None,
+                created_at=r.created_at,
+                is_anonymous=(r.student_id is None),
+            )
+        )
+    return result

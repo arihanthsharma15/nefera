@@ -8,6 +8,13 @@ class Settings(BaseSettings):
     DEMO_PASSWORD: str
     SUPABASE_JWT_SECRET: str
 
+    SUPABASE_URL: str
+    SUPABASE_SERVICE_ROLE_KEY: str  # Ye "anon" key nahi, "service_role" key honi chahiye (Secret)
+    
+    # Pilot School Defaults
+    PILOT_SCHOOL_DOMAIN: str = "pilot.school"  # Fake domain for emails
+    
+
     # ✅ ERROR WAALE ENV VARS KO BHI ALLOW KAR LE
     DATABASE_URL: str | None = None
     SECRET_KEY: str | None = None

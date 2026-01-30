@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
-
+from typing import List
+from app import models, schemas
 from app.db.base import get_db
 from app import models
 from app.core.deps.auth import require_demo
 from app.core.deps.entrypoint import require_entrypoint
 from app.core.constants import ROLES, ENTRYPOINTS
+from app.schemas import BroadcastCreate, BroadcastOut
+from collections import Counter
 
 router = APIRouter(prefix="/principal", tags=["principal"])
 
@@ -51,3 +54,110 @@ def admin_dashboard(
         },
         "mood_distribution": mood_distribution,
     }
+
+@router.get("/reports", response_model=List[schemas.IncidentReportOut])
+def get_incident_reports_for_principal(
+    db: Session = Depends(get_db),
+    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
+):
+    
+    reports = (
+        db.query(models.IncidentReport)
+        .join(models.Class, models.IncidentReport.class_id == models.Class.id)
+        .order_by(models.IncidentReport.created_at.desc())
+        .all()
+    )
+
+    result = []
+    for r in reports:
+        result.append(
+            schemas.IncidentReportOut(
+                id=r.id,
+                incident_type=r.type.value,
+                description=r.description,
+                status=r.status.value,
+                class_name=r.classroom.name if r.classroom else None,
+                created_at=r.created_at,
+                is_anonymous=(r.student_id is None),
+            )
+        )
+    return result
+
+@router.get("/top-stressors")
+def principal_top_stressors(
+    days: int = 7,
+    db: Session = Depends(get_db),
+    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
+):
+    """
+    Top stressors across the school based on DailyJournal.trigger_tags.
+    Looks at last `days` days. 
+    trigger_tags is expected to be a JSON array of strings.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Last `days` days ke saare journals
+    rows = (
+        db.query(models.DailyJournal.trigger_tags)
+        .filter(models.DailyJournal.date >= cutoff)
+        .all()
+    )
+
+    all_tags: list[str] = []
+
+    for (tags,) in rows:
+        if not tags:
+            continue
+        # JSON array case
+        if isinstance(tags, list):
+            all_tags.extend([str(t).strip() for t in tags if t])
+        else:
+            # fallback: comma-separated string
+            for t in str(tags).split(","):
+                t = t.strip()
+                if t:
+                    all_tags.append(t)
+
+    counts = Counter(all_tags)
+    top = [{"tag": tag, "count": count} for tag, count in counts.most_common(5)]
+
+    return {"top_stressors": top}
+
+@router.post("/broadcast", response_model=BroadcastOut)
+def principal_broadcast(
+    payload: BroadcastCreate,
+    db: Session = Depends(get_db),
+    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
+):
+    """
+    Principal sends a message to the whole school (all students of their school).
+    For demo: we just pick the first principal user to get school_id.
+    """
+    principal_user = (
+        db.query(models.User)
+        .filter(models.User.role == models.UserRole.PRINCIPAL)
+        .first()
+    )
+    if not principal_user or not principal_user.school_id:
+        raise HTTPException(status_code=404, detail="No principal with school found")
+
+    msg = models.BroadcastMessage(
+        sender_role=models.UserRole.PRINCIPAL,
+        school_id=principal_user.school_id,
+        class_id=None,
+        student_profile_id=None,
+        content=payload.content,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
+    return BroadcastOut(
+        id=msg.id,
+        sender_role=msg.sender_role.value,
+        content=msg.content,
+        created_at=msg.created_at,
+    )
