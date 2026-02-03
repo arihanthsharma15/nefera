@@ -1,0 +1,144 @@
+@import "tailwindcss";
+
+:root {
+  --nefera-bg: 250 249 255;
+  --nefera-surface: 255 255 255;
+  --nefera-ink: 20 24 33;
+  --nefera-muted: 96 110 135;
+  --nefera-border: 231 234 242;
+  --nefera-brand: 98 110 255;
+  --nefera-brand-2: 62 197 200;
+  --nefera-warn: 245 158 11;
+  --nefera-danger: 244 63 94;
+  --nefera-ok: 34 197 94;
+  --nefera-feeling-happy: 34 197 94;
+  --nefera-feeling-neutral: 59 130 246;
+  --nefera-feeling-flat: 156 163 175;
+  --nefera-feeling-worried: 245 158 11;
+  --nefera-feeling-sad: 244 63 94;
+  --nefera-banner-a: rgba(98, 110, 255, 0.18);
+  --nefera-banner-b: rgba(62, 197, 200, 0.16);
+  --nefera-pattern: rgba(98, 110, 255, 0.06);
+
+  color: rgb(var(--nefera-ink));
+  color-scheme: light;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+}
+
+html[data-role='student'] {
+  --nefera-banner-a: rgba(98, 110, 255, 0.20);
+  --nefera-banner-b: rgba(255, 206, 140, 0.18);
+  --nefera-pattern: rgba(98, 110, 255, 0.06);
+}
+
+html[data-role='teacher'] {
+  --nefera-banner-a: rgba(62, 197, 200, 0.20);
+  --nefera-banner-b: rgba(98, 110, 255, 0.16);
+  --nefera-pattern: rgba(62, 197, 200, 0.06);
+}
+
+html[data-role='parent'] {
+  --nefera-banner-a: rgba(255, 206, 140, 0.22);
+  --nefera-banner-b: rgba(98, 110, 255, 0.14);
+  --nefera-pattern: rgba(255, 206, 140, 0.07);
+}
+
+html[data-role='counselor'] {
+  --nefera-banner-a: rgba(34, 197, 94, 0.18);
+  --nefera-banner-b: rgba(62, 197, 200, 0.16);
+  --nefera-pattern: rgba(34, 197, 94, 0.06);
+}
+
+html[data-role='principal'] {
+  --nefera-banner-a: rgba(59, 130, 246, 0.16);
+  --nefera-banner-b: rgba(98, 110, 255, 0.16);
+  --nefera-pattern: rgba(59, 130, 246, 0.06);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  position: relative;
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(900px 600px at 20% 0%, rgba(98, 110, 255, 0.10), transparent 55%),
+    radial-gradient(900px 600px at 100% 30%, rgba(62, 197, 200, 0.12), transparent 55%),
+    radial-gradient(900px 600px at 50% 100%, rgba(246, 183, 99, 0.10), transparent 55%),
+    rgb(var(--nefera-bg));
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(circle at 20px 20px, var(--nefera-pattern) 1px, transparent 1px),
+    radial-gradient(circle at 12px 8px, rgba(255, 255, 255, 0.10) 1px, transparent 1px),
+    radial-gradient(500px 260px at 15% 15%, rgba(255, 255, 255, 0.10), transparent 60%),
+    radial-gradient(520px 260px at 85% 10%, rgba(255, 255, 255, 0.08), transparent 60%);
+  background-size: 56px 56px, 84px 84px, auto, auto;
+  opacity: 0.9;
+  mix-blend-mode: soft-light;
+}
+
+#root {
+  min-height: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes nefera-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nefera-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes nefera-pop {
+  from {
+    transform: scale(0.98);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes nefera-sparkle {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.75);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(1.15);
+  }
+}
