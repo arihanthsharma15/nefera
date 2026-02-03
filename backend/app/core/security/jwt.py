@@ -1,32 +1,11 @@
 # app/core/security/jwt.py
 
-import jwt
-from datetime import datetime, timedelta
-from fastapi import HTTPException
+"""
+Authentication in this project uses Supabase JWTs and is handled in
+`app/core/deps/auth.py` and `app/api/auth.py`.
 
-from app.core.config import settings
+If you need utility helpers for signing/verification they can be
+added here, but avoid embedding secrets in source control.
+"""
 
-ALGO = "HS256"
-
-def sign_demo_token(role: str) -> str:
-    payload = {
-        "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=6),
-        "iat": datetime.utcnow(),
-        "type": "demo"
-    }
-    return jwt.encode(payload, settings.DEMO_JWT_SECRET, algorithm=ALGO)
-
-
-def verify_demo_token(token: str) -> dict:
-    try:
-        payload = jwt.decode(
-            token,
-            settings.DEMO_JWT_SECRET,
-            algorithms=[ALGO]
-        )
-        if payload.get("type") != "demo":
-            raise HTTPException(status_code=404)
-        return payload
-    except Exception:
-        raise HTTPException(status_code=404)
+__all__ = []

@@ -18,7 +18,6 @@ ENTRYPOINTS = {
 
 HEADERS = {
     "AUTH": "authorization",
-    "DEMO_TOKEN": "x-nefera-demo-token",
     "ENTRYPOINT": "x-nefera-entrypoint",
 }
 

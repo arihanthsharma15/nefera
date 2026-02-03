@@ -1,11 +1,20 @@
 # app/main.py
 from fastapi import FastAPI
 
-from app.api.v1 import api_router  # 👈 yahi aggregate router use karenge
+from app.api.v1 import api_router 
+from fastapi.middleware.cors import CORSMiddleware # 👈 yahi aggregate router use karenge
 
 app = FastAPI(
     title="Wellness Platform API",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Sare routes yahi se aa jayenge

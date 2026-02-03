@@ -14,7 +14,7 @@ from app.core.scoring import (
     calculate_cssrs,
 )
 
-from app.core.deps.auth import require_student  # ✅ Supabase-based student auth
+from app.core.deps.auth import require_role  # ✅ Supabase-based student auth
 from app.core.security.encryption import encrypt_text, decrypt_text
 from datetime import datetime, timedelta
 from typing import List
@@ -25,13 +25,12 @@ router = APIRouter(prefix="/students", tags=["students"])
 @router.get("/inbox", response_model=List[schemas.BroadcastOut])
 def student_inbox(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),
+    payload: dict = Depends(require_role("STUDENT")),
 ):
     """
     Student inbox: messages sent to their school, class, or specifically them.
-    For demo: we just pick the first StudentProfile as 'current' student.
     """
-    student = db.query(models.StudentProfile).first()
+    student = _get_current_student_profile(db, payload)
     if not student:
         raise HTTPException(status_code=404, detail="No student profile found")
 
@@ -96,7 +95,7 @@ def create_daily_checkin(
     checkin: schemas.CheckinCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),   # 🔑 Only valid Supabase student token allowed
+    payload: dict = Depends(require_role("STUDENT")),   # 🔑 Only valid Supabase student token allowed
 ):
     # 1. Student profile nikaal
     profile = _get_current_student_profile(db, payload)
@@ -126,7 +125,7 @@ def create_daily_checkin(
         student_id=profile.id,
         mood=checkin.mood,
         sleep_hours=checkin.sleep_hours,
-        checkin_data=checkin.checkin_data,
+        checkin_data=checkin_data,
         journal_text=encrypted_journal,
         has_anxiety_terms=analysis["has_anxiety_terms"],
         has_low_mood_terms=analysis["has_low_mood_terms"],
@@ -157,7 +156,7 @@ def create_daily_checkin(
         db.commit()
 
      # 3. Risk engine background mein
-    background_tasks.add_task(update_student_risk_profile, db, profile.id)
+    update_student_risk_profile(db, profile.id)
 
     # 4. Frontend ko friendly message + tool
     message = "Thanks for checking in."
@@ -196,7 +195,7 @@ def create_daily_checkin(
 def submit_assessment(
     assessment: schemas.AssessmentCreate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),   # 🔑 Again, only that student
+    payload: dict = Depends(require_role("STUDENT")),   # 🔑 Again, only that student
 ):
     profile = _get_current_student_profile(db, payload)
 
@@ -270,8 +269,8 @@ def submit_assessment(
                 if profile.risk_status != "CRISIS":
                     profile.risk_status = "RED"
 
-    elif assessment.type == "CSSRS":
-        if risk_level in ["HIGH", "CRISIS"]:
+        elif assessment.type == "CSSRS":
+         if risk_level in ["HIGH", "CRISIS"]:
             profile.risk_status = "CRISIS"
         elif risk_level == "MODERATE":
             if profile.risk_status != "CRISIS":
@@ -294,7 +293,7 @@ def submit_assessment(
 def get_my_journals(
     days: int = 14,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),
+    payload: dict = Depends(require_role("STUDENT")),
 ):
     """
     Current student ke last `days` journals.
@@ -347,7 +346,7 @@ def get_my_journals(
 @router.get("/assessments/history", response_model=List[schemas.AssessmentHistoryOut])
 def get_my_assessment_history(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),
+    payload: dict = Depends(require_role("STUDENT")),
 ):
     """
     Current student ke saare assessments (PHQ9, GAD7),
@@ -376,7 +375,7 @@ def get_my_assessment_history(
 def report_incident(
     report: schemas.IncidentReportCreate,
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_student),
+    payload: dict = Depends(require_role("STUDENT")),
 ):
     """
     Student incident report (bullying, harassment, ragging, etc.)

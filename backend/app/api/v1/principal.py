@@ -6,7 +6,7 @@ from typing import List
 from app import models, schemas
 from app.db.base import get_db
 from app import models
-from app.core.deps.auth import require_demo
+from app.core.deps.auth import require_role
 from app.core.deps.entrypoint import require_entrypoint
 from app.core.constants import ROLES, ENTRYPOINTS
 from app.schemas import BroadcastCreate, BroadcastOut
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/principal", tags=["principal"])
 @router.get("/dashboard")
 def admin_dashboard(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _role = Depends(require_role("PRINCIPAL")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
 ):
     """
@@ -58,7 +58,7 @@ def admin_dashboard(
 @router.get("/reports", response_model=List[schemas.IncidentReportOut])
 def get_incident_reports_for_principal(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _role = Depends(require_role("PRINCIPAL")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
 ):
     
@@ -88,7 +88,7 @@ def get_incident_reports_for_principal(
 def principal_top_stressors(
     days: int = 7,
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _role = Depends(require_role("PRINCIPAL")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
 ):
     """
@@ -129,12 +129,11 @@ def principal_top_stressors(
 def principal_broadcast(
     payload: BroadcastCreate,
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["PRINCIPAL"])),
+    _role = Depends(require_role("PRINCIPAL")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PRINCIPAL"])),
 ):
     """
     Principal sends a message to the whole school (all students of their school).
-    For demo: we just pick the first principal user to get school_id.
     """
     principal_user = (
         db.query(models.User)

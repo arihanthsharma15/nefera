@@ -282,16 +282,13 @@ def calculate_cssrs(answers: List[int]) -> Tuple[int, str, bool]:
 
     if score == 0:
         risk_band = "GREEN"
-    elif (q1 == 1 or q2 == 1) and (q3 == 0 and q4 == 0 and q5 == 0 and q6 == 0):
-        risk_band = "LOW"
-    elif q3 == 1 or q4 == 1:
-        risk_band = "MODERATE"
-    elif q5 == 1:
-        risk_band = "HIGH"
     elif q6 == 1:
         risk_band = "CRISIS"
-
-    if risk_band in ("HIGH", "CRISIS"):
-        is_crisis = True
+    elif q5 == 1:
+         risk_band = "HIGH"
+    elif q3 == 1 or q4 == 1:
+        risk_band = "MODERATE"
+    elif (q1 == 1 or q2 == 1):
+        risk_band = "LOW"
 
     return score, risk_band, is_crisis

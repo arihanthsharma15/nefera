@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from app.db.base import get_db
 from app import models
-from app.core.deps.auth import require_demo
+from app.core.deps.auth import require_role
 from app.core.deps.entrypoint import require_entrypoint
 from app.core.constants import ROLES, ENTRYPOINTS
 
@@ -15,20 +15,28 @@ router = APIRouter(prefix="/parents", tags=["parents"])
 def parent_dashboard(
     days: int = 7,
     db: Session = Depends(get_db),
-    _payload = Depends(require_demo(ROLES["PARENT"])),
+    payload = Depends(require_role("PARENT")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["PARENT"])),
 ):
     """
     Parent view: shows ONLY their linked child's snapshot.
-    For prototype: picks the first parent user in DB and their first child.
     """
 
-    # 1) Get some parent user (for demo we just pick the first)
-    parent_user = (
-        db.query(models.User)
-        .filter(models.User.role == models.UserRole.PARENT)
-        .first()
-    )
+    # 1) Get parent user from token; fallback to any parent for demo
+    email = payload.get("email") if isinstance(payload, dict) else None
+    parent_user = None
+    if email:
+        parent_user = (
+            db.query(models.User)
+            .filter(models.User.email == email)
+            .first()
+        )
+    if not parent_user:
+        parent_user = (
+            db.query(models.User)
+            .filter(models.User.role == models.UserRole.PARENT)
+            .first()
+        )
 
     if not parent_user:
         raise HTTPException(status_code=404, detail="No parent user found")
@@ -39,6 +47,7 @@ def parent_dashboard(
     # 2) Take the first linked child (student_profile)
     student = parent_user.children[0]
     classroom = student.classroom
+    user = student.user
 
     cutoff = datetime.utcnow() - timedelta(days=days)
 
@@ -69,6 +78,7 @@ def parent_dashboard(
 
     return {
         "student_id": student.id,
+        "student_name": user.full_name if user else None,
         "class_name": classroom.name if classroom else None,
         "risk_status": display_risk,
         "streak_count": student.streak_count,

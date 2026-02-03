@@ -3,13 +3,13 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # jo pehle se the:
-    DEMO_JWT_SECRET: str
-    DEMO_PASSWORD: str
+    # Core auth / external service settings
     SUPABASE_JWT_SECRET: str
 
-    SUPABASE_URL: str
-    SUPABASE_SERVICE_ROLE_KEY: str  # Ye "anon" key nahi, "service_role" key honi chahiye (Secret)
+    SUPABASE_URL: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None  # service_role key (optional)
+    SUPABASE_ANON_KEY: str | None = None
+    SUPABASE_JWKS_URL: str | None = None
     
     # Pilot School Defaults
     PILOT_SCHOOL_DOMAIN: str = "pilot.school"  # Fake domain for emails

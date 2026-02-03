@@ -8,7 +8,7 @@ from app import models, schemas
 from typing import List
 from app.db.base import get_db
 from app import models
-from app.core.deps.auth import require_demo
+from app.core.deps.auth import require_role
 from app.core.deps.entrypoint import require_entrypoint
 from app.core.constants import ROLES, ENTRYPOINTS
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/counselors", tags=["counselors"])
 @router.get("/dashboard")
 def dashboard(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _role = Depends(require_role("COUNSELOR")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
 ):
     """
@@ -52,7 +52,7 @@ def dashboard(
 @router.get("/dashboard/by-class")
 def dashboard_by_class(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _role = Depends(require_role("COUNSELOR")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
 ):
     """
@@ -101,7 +101,7 @@ def dashboard_by_class(
 @router.get("/students/risky")
 def get_at_risk_students(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _role = Depends(require_role("COUNSELOR")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
 ):
     """
@@ -141,7 +141,7 @@ def get_at_risk_students(
 def get_student_detail(
     student_id: int,
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _role = Depends(require_role("COUNSELOR")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
 ):
     """
@@ -219,7 +219,7 @@ def get_student_detail(
 @router.get("/reports", response_model=List[schemas.IncidentReportOut])
 def get_incident_reports_for_counselor(
     db: Session = Depends(get_db),
-    _role = Depends(require_demo(ROLES["COUNSELOR"])),
+    _role = Depends(require_role("COUNSELOR")),
     _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
 ):
     

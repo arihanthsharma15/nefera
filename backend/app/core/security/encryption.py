@@ -1,6 +1,9 @@
 # app/core/security/encryption.py
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()  
 from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
