@@ -78,7 +78,11 @@ def parent_dashboard(
 
     return {
         "student_id": student.id,
-        "student_name": user.full_name if user else None,
+        "student_name": (
+            user.full_name
+            if (user and user.full_name)
+            else (user.email if user else None)
+        ),
         "class_name": classroom.name if classroom else None,
         "risk_status": display_risk,
         "streak_count": student.streak_count,

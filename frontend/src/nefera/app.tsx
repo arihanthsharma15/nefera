@@ -1,16 +1,21 @@
 import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import {
   loginWithSupabase,
+  resolveLoginIdentifier,
   submitCheckin,
   syncSupabaseUser,
   getStudentInbox,
+  getStudentJournals,
   submitIncidentReport,
   getPrincipalDashboard,
   getPrincipalReports,
   sendPrincipalBroadcast,
   getCounselorDashboard,
+  getCounselorClasses,
+  getCounselorStudents,
   getCounselorRiskyStudents,
   getTeacherDashboard,
+  getTeacherStudents,
   getParentDashboard,
 } from "../api";
 import { supabase } from "../lib/supabase";
@@ -445,8 +450,23 @@ function LoginPage() {
                 disabled={!selectedRole}
                 onClick={async () => {
                   try {
+                    const identifier = id.trim()
+                    if (!identifier) {
+                      alert("Please enter School ID or Email")
+                      return
+                    }
+                    const email =
+                      identifier.includes("@")
+                        ? identifier
+                        : (await resolveLoginIdentifier(identifier))?.email
+
+                    if (!email) {
+                      alert("Invalid School ID / Email")
+                      return
+                    }
+
                     // 1) Supabase login
-                    await loginWithSupabase(id, pw);
+                    await loginWithSupabase(email, pw);
 
                     // 2) Backend handshake (JWT verify + local profile + role)
                     const backendUser = await syncSupabaseUser();
@@ -479,7 +499,7 @@ function LoginPage() {
                     }
 
                     const roleName = finalRole[0].toUpperCase() + finalRole.slice(1);
-                    const displayName = backendUser?.name || name || roleName;
+                    const displayName = name || backendUser?.name || roleName;
                     login(displayName, finalRole);
 
                     const from = search.get("from");
@@ -547,16 +567,65 @@ function RoleEntry() {
 function StudentDashboard() {
   const { user } = useAuth()
   const { state } = useNefera()
+  const [journals, setJournals] = useState<any[]>([])
   const feelingHint = useFirstVisitHint('nefera_hint_feeling_checkin_v1')
-  const dayStreak = streakFromISODateList(state.student.checkIns.map((c) => c.createdAt.slice(0, 10)))
-  const journalStreak = streakFromISODateList(state.student.journal.map((j) => j.dateKey))
-  const totalActiveDays = useMemo(() => {
-    const days = new Set<string>()
-    state.student.checkIns.forEach((x) => days.add(x.createdAt.slice(0, 10)))
-    state.student.journal.forEach((x) => days.add(x.dateKey))
-    state.student.sleepLogs.forEach((x) => days.add(x.createdAt.slice(0, 10)))
-    return days.size
-  }, [state.student.checkIns, state.student.journal, state.student.sleepLogs])
+
+  useEffect(() => {
+    getStudentJournals(30)
+      .then(setJournals)
+      .catch(console.error)
+  }, [])
+
+  const journalDates = useMemo(() => {
+    return journals.map((j) => new Date(j.date).toISOString().slice(0, 10))
+  }, [journals])
+
+  const dayStreak = streakFromISODateList(journalDates)
+  const journalStreak = dayStreak
+  const totalActiveDays = useMemo(() => new Set(journalDates).size, [journalDates])
+
+  const { segments, topStressors } = useMemo(() => {
+    const counts: Record<string, number> = {
+      HAPPY: 0,
+      NEUTRAL: 0,
+      FLAT: 0,
+      WORRIED: 0,
+      SAD: 0,
+    }
+
+    const stressorCounts: Record<string, number> = {}
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 7)
+
+    for (const j of journals) {
+      const date = new Date(j.date)
+      if (date < cutoff) continue
+      const mood = String(j.mood || "").toUpperCase()
+      if (mood in counts) counts[mood] += 1
+      const triggers = j.triggers
+      if (Array.isArray(triggers)) {
+        for (const t of triggers) {
+          const key = String(t)
+          stressorCounts[key] = (stressorCounts[key] || 0) + 1
+        }
+      }
+    }
+
+    const seg = [
+      { label: 'Happy', value: counts.HAPPY, color: 'rgb(var(--nefera-feeling-happy))' },
+      { label: 'Neutral', value: counts.NEUTRAL, color: 'rgb(var(--nefera-feeling-neutral))' },
+      { label: 'Flat', value: counts.FLAT, color: 'rgb(var(--nefera-feeling-flat))' },
+      { label: 'Worried', value: counts.WORRIED, color: 'rgb(var(--nefera-feeling-worried))' },
+      { label: 'Sad', value: counts.SAD, color: 'rgb(var(--nefera-feeling-sad))' },
+    ]
+
+    const top = Object.entries(stressorCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([k, v]) => ({ k, v }))
+
+    return { segments: seg, topStressors: top }
+  }, [journals])
   return (
     <Page title={`Hi ${user?.name ?? 'there'}`} subtitle="Start with a one-minute check-in.">
       <Card className="mb-4">
@@ -640,42 +709,33 @@ function StudentDashboard() {
           </CardBody>
         </Card>
         <div className="grid gap-4">
-          {(() => {
-            const segments = [
-              { label: 'Happy', value: 25, color: 'rgb(var(--nefera-feeling-happy))' },
-              { label: 'Neutral', value: 18, color: 'rgb(var(--nefera-feeling-neutral))' },
-              { label: 'Flat', value: 12, color: 'rgb(var(--nefera-feeling-flat))' },
-              { label: 'Worried', value: 10, color: 'rgb(var(--nefera-feeling-worried))' },
-              { label: 'Sad', value: 6, color: 'rgb(var(--nefera-feeling-sad))' },
-            ]
-            return (
-              <>
-                <ChartCard title="Weekly feeling distribution" subtitle="Last 7 days">
-                  <div className="grid place-items-center rounded-2xl border border-white/70 bg-white/55 p-6 shadow-lg shadow-black/5">
-                    <DonutChart size={168} stroke={18} segments={segments} />
-                  </div>
-                  <ChartLegend segments={segments} />
-                </ChartCard>
-                <ChartCard title="Top stressors" subtitle="This week">
-                  <div className="space-y-3">
-                    {[
-                      { k: 'Homework', v: 10 },
-                      { k: 'Friends', v: 7 },
-                      { k: 'Sleep', v: 6 },
-                    ].map((x) => (
-                      <div key={x.k} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm font-semibold text-[rgb(var(--nefera-muted))]">
-                          <span className="text-[rgb(var(--nefera-ink))]">{x.k}</span>
-                          <span>{x.v}</span>
-                        </div>
-                        <MiniBar value={x.v} max={12} />
+          <>
+            <ChartCard title="Weekly feeling distribution" subtitle="Last 7 days">
+              <div className="grid place-items-center rounded-2xl border border-white/70 bg-white/55 p-6 shadow-lg shadow-black/5">
+                <DonutChart size={168} stroke={18} segments={segments} />
+              </div>
+              <ChartLegend segments={segments} />
+            </ChartCard>
+            <ChartCard title="Top stressors" subtitle="This week">
+              <div className="space-y-3">
+                {topStressors.length ? (
+                  topStressors.map((x) => (
+                    <div key={x.k} className="space-y-2">
+                      <div className="flex items-center justify-between text-sm font-semibold text-[rgb(var(--nefera-muted))]">
+                        <span className="text-[rgb(var(--nefera-ink))]">{x.k}</span>
+                        <span>{x.v}</span>
                       </div>
-                    ))}
+                      <MiniBar value={x.v} max={Math.max(3, topStressors[0]?.v ?? 1)} />
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-[rgb(var(--nefera-muted))]">
+                    No stressors logged yet.
                   </div>
-                </ChartCard>
-              </>
-            )
-          })()}
+                )}
+              </div>
+            </ChartCard>
+          </>
         </div>
       </div>
     </Page>
@@ -683,7 +743,32 @@ function StudentDashboard() {
 }
 
 function StudentCheckInEntry() {
-  return <Navigate to="/student/dashboard" replace />
+  return (
+    <Page emoji="💛" title="Daily check-in" subtitle="How are you feeling today?">
+      <Card>
+        <CardBody className="space-y-4">
+          <Section title="Pick a feeling" subtitle="There’s no right answer — just be honest." />
+          <div className="grid grid-cols-5 gap-3">
+            {(['happy', 'neutral', 'flat', 'worried', 'sad'] as Feeling[]).map((f) => (
+              <div key={f} className="text-center">
+                <FeelingButton
+                  to={`/student/check-in/${f}`}
+                  emoji={feelingEmoji(f)}
+                  label={feelingLabel(f)}
+                  color={feelingPalette[f].color}
+                  background={feelingPalette[f].bg}
+                  borderColor={feelingPalette[f].border}
+                  ringColor={feelingPalette[f].ring}
+                  className="mx-auto h-16 w-16"
+                />
+                <div className="mt-3 text-xs font-extrabold tracking-tight text-[rgb(var(--nefera-ink))]">{feelingLabel(f)}</div>
+              </div>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
+    </Page>
+  )
 }
 
 function StudentCheckInFlow() {
@@ -1065,6 +1150,11 @@ function StudentJournalWrite() {
               </div>
             ) : null}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to="/student/journal/past">
+              <Button variant="secondary">View past entries</Button>
+            </Link>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/55 p-4 shadow-lg shadow-black/5">
             <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">Feeling</div>
             <Segmented
@@ -1173,11 +1263,18 @@ function StudentJournalWrite() {
 }
 
 function StudentJournalPast() {
-  const { state } = useNefera()
+  const [journals, setJournals] = useState<any[]>([])
+
+  useEffect(() => {
+    getStudentJournals(60)
+      .then(setJournals)
+      .catch(console.error)
+  }, [])
+
   return (
     <Page emoji="🗓️" title="Past entries" subtitle="A gentle timeline of thoughts and growth.">
       <div className="grid gap-3">
-        {state.student.journal.length === 0 ? (
+        {journals.length === 0 ? (
           <Card>
             <CardHeader emoji="📝" title="No entries yet" subtitle="Start with one honest sentence. It counts." />
             <CardBody className="space-y-4">
@@ -1190,19 +1287,18 @@ function StudentJournalPast() {
             </CardBody>
           </Card>
         ) : null}
-        {state.student.journal.map((e) => (
+        {journals.map((e) => (
           <Card key={e.id}>
             <CardBody className="space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-base font-extrabold tracking-tight text-[rgb(var(--nefera-ink))]">{e.title}</div>
+                  <div className="text-base font-extrabold tracking-tight text-[rgb(var(--nefera-ink))]">{e.mood ?? 'Entry'}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-[rgb(var(--nefera-muted))]">
-                    <span>{formatShort(e.createdAt)}</span>
-                    {e.updatedAt ? <Badge>Edited</Badge> : null}
+                    <span>{formatShort(e.date)}</span>
                   </div>
                 </div>
               </div>
-              <div className="text-sm leading-7 text-[rgb(var(--nefera-muted))] whitespace-pre-wrap">{e.content}</div>
+              <div className="text-sm leading-7 text-[rgb(var(--nefera-muted))] whitespace-pre-wrap">{e.journal_text}</div>
             </CardBody>
           </Card>
         ))}
@@ -1634,7 +1730,10 @@ function StudentInbox() {
         })
         dispatch({ type: 'student/setInbox', inbox })
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err)
+        dispatch({ type: 'student/setInbox', inbox: [] })
+      })
   }, [dispatch])
   const msg = state.student.inbox.find((m) => m.id === openId) ?? null
   const unread = state.student.inbox.filter((m) => !m.readAt).length
@@ -1989,13 +2088,20 @@ function ParentObservationChecklist() {
 }
 
 function StudentProfile() {
-  const { state } = useNefera()
   const { user } = useAuth()
-  const checkIns = state.student.checkIns.length
-  const journals = state.student.journal.length
-  const sleep = state.student.sleepLogs.length
-  const dayStreak = streakFromISODateList(state.student.checkIns.map((c) => c.createdAt.slice(0, 10)))
-  const journalStreak = streakFromISODateList(state.student.journal.map((j) => j.dateKey))
+  const [journals, setJournals] = useState<any[]>([])
+
+  useEffect(() => {
+    getStudentJournals(90)
+      .then(setJournals)
+      .catch(console.error)
+  }, [])
+
+  const journalDates = useMemo(() => journals.map((j) => new Date(j.date).toISOString().slice(0, 10)), [journals])
+  const checkIns = journals.length
+  const sleep = 0
+  const dayStreak = streakFromISODateList(journalDates)
+  const journalStreak = dayStreak
   return (
     <Page emoji="🙋" title="Profile" subtitle="Manage your information and view your activity.">
       <Card>
@@ -2012,7 +2118,7 @@ function StudentProfile() {
             </div>
             <div className="rounded-3xl border border-[rgb(var(--nefera-border))] bg-white p-3 text-center">
               <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Journals</div>
-              <div className="mt-1 text-xl font-extrabold text-[rgb(var(--nefera-ink))]">{journals}</div>
+              <div className="mt-1 text-xl font-extrabold text-[rgb(var(--nefera-ink))]">{journals.length}</div>
             </div>
             <div className="rounded-3xl border border-[rgb(var(--nefera-border))] bg-white p-3 text-center">
               <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Sleep</div>
@@ -2062,10 +2168,28 @@ function flagLabel(flag: 'orange' | 'red' | 'crisis' | 'none') {
   return 'None'
 }
 
+function riskToFlag(risk?: string): 'orange' | 'red' | 'crisis' | 'none' {
+  if (!risk) return 'none'
+  const upper = risk.toUpperCase()
+  if (upper === 'ORANGE') return 'orange'
+  if (upper === 'RED') return 'red'
+  if (upper === 'CRISIS') return 'crisis'
+  return 'none'
+}
+
+type TeacherStudentItem = {
+  id: number
+  name: string
+  roll_number?: string | null
+  class_name?: string | null
+  risk_status?: string | null
+  flags: 'orange' | 'red' | 'crisis' | 'none'
+}
+
 function TeacherDashboard() {
-  const { state } = useNefera()
   const { user } = useAuth()
   const [riskZones, setRiskZones] = useState<{ green: number; orange: number; red: number; crisis: number } | null>(null)
+  const [students, setStudents] = useState<TeacherStudentItem[]>([])
 
   useEffect(() => {
     getTeacherDashboard()
@@ -2073,7 +2197,18 @@ function TeacherDashboard() {
       .catch(console.error)
   }, [])
 
-  const students = state.teacher.students
+  useEffect(() => {
+    getTeacherStudents()
+      .then((data) => {
+        const list = (data?.students ?? []).map((s: any) => ({
+          ...s,
+          flags: riskToFlag(s?.risk_status),
+        }))
+        setStudents(list)
+      })
+      .catch(console.error)
+  }, [])
+
   const flagged = riskZones ? (riskZones.orange + riskZones.red + riskZones.crisis) : students.filter((s) => s.flags !== 'none').length
   const crisis = riskZones ? riskZones.crisis : students.filter((s) => s.flags === 'crisis').length
   const high = riskZones ? riskZones.red : students.filter((s) => s.flags === 'red').length
@@ -2120,7 +2255,7 @@ function TeacherDashboard() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{s.name}</div>
-                  <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">{s.grade}</div>
+                  <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">{s.class_name ?? ''}</div>
                 </div>
                 <Badge tone={flagTone(s.flags)}>{flagLabel(s.flags)}</Badge>
               </div>
@@ -2190,8 +2325,19 @@ function TeacherBroadcast() {
 }
 
 function TeacherStudents() {
-  const { state, dispatch } = useNefera()
-  const students = state.teacher.students
+  const [students, setStudents] = useState<TeacherStudentItem[]>([])
+
+  useEffect(() => {
+    getTeacherStudents()
+      .then((data) => {
+        const list = (data?.students ?? []).map((s: any) => ({
+          ...s,
+          flags: riskToFlag(s?.risk_status),
+        }))
+        setStudents(list)
+      })
+      .catch(console.error)
+  }, [])
 
   return (
     <Page emoji="🧑‍🎓" title="Students" subtitle="View students and log observations.">
@@ -2201,13 +2347,19 @@ function TeacherStudents() {
             <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
                 <div className="text-base font-extrabold tracking-tight text-[rgb(var(--nefera-ink))]">{s.name}</div>
-                <div className="mt-1 text-xs font-semibold text-[rgb(var(--nefera-muted))]">{s.grade}</div>
+                <div className="mt-1 text-xs font-semibold text-[rgb(var(--nefera-muted))]">{s.class_name ?? ''}</div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={flagTone(s.flags)}>{flagLabel(s.flags)}</Badge>
                 <Select
                   value={s.flags}
-                  onChange={(v) => dispatch({ type: 'teacher/setStudentFlags', studentId: s.id, flags: v as 'orange' | 'red' | 'crisis' | 'none' })}
+                  onChange={(v) =>
+                    setStudents((prev) =>
+                      prev.map((item) =>
+                        item.id === s.id ? { ...item, flags: v as TeacherStudentItem['flags'] } : item
+                      )
+                    )
+                  }
                   options={[
                     { value: 'none', label: 'None' },
                     { value: 'orange', label: 'Watch' },
@@ -2502,7 +2654,7 @@ function CounselorDashboard() {
             <StatPill emoji="🧑‍🎓" label="Students" value={`${total}`} />
             <StatPill emoji="🚩" label="Flagged" value={`${flagged}`} />
             <StatPill emoji="🛟" label="Crisis" value={`${crisis}`} />
-            <StatPill emoji="🗂️" label="Actions" value={`${state.counselor.crisisActions.filter((a) => !a.done).length}`} />
+            <StatPill emoji="🗂️" label="Crisis actions" value={`${state.counselor.crisisActions.filter((a) => !a.done).length}`} />
           </CardBody>
         </Card>
         <Card>
@@ -2615,10 +2767,64 @@ function CounselorFlags() {
 }
 
 function CounselorStudents() {
-  const { state } = useNefera()
-  const students = state.counselor.students
+  const [classes, setClasses] = useState<{ id: number; name: string }[]>([])
+  const [classId, setClassId] = useState<number | null>(null)
+  const [students, setStudents] = useState<{ id: string; name: string; grade: string; flags: 'orange' | 'red' | 'crisis' | 'none' }[]>([])
+
+  useEffect(() => {
+    getCounselorClasses()
+      .then((rows) => {
+        const list = rows ?? []
+        setClasses(list)
+        if (list.length > 0) {
+          setClassId((prev) => (prev == null ? Number(list[0].id) : prev))
+        }
+      })
+      .catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (classId == null) {
+      setStudents([])
+      return
+    }
+    getCounselorStudents(classId)
+      .then((rows) => {
+        const mapped = (rows ?? []).map((s: any) => {
+          const status = String(s.risk_status || "GREEN").toLowerCase()
+          const flag =
+            status === "crisis" ? "crisis" :
+            status === "red" ? "red" :
+            status === "orange" ? "orange" :
+            "none"
+
+          return {
+            id: String(s.id),
+            name: s.name || s.email || "Student",
+            grade: s.class_name || "Class",
+            flags: flag as "orange" | "red" | "crisis" | "none",
+          }
+        })
+        setStudents(mapped)
+      })
+      .catch(console.error)
+  }, [classId])
   return (
     <Page emoji="🧑‍🎓" title="Students" subtitle="Open a student to review questionnaires and plan follow-up.">
+      <Card className="mb-4">
+        <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Class</div>
+            <div className="mt-1">
+              <Select
+                value={classId != null ? String(classId) : ''}
+                onChange={(v) => setClassId(Number(v))}
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
+            </div>
+          </div>
+        </CardBody>
+      </Card>
       <div className="grid gap-3">
         {students.map((s) => (
           <Link key={s.id} to={`/counselor/students/${s.id}`} className="rounded-2xl border border-white/70 bg-white/60 p-5 shadow-lg shadow-black/5">
@@ -2631,6 +2837,11 @@ function CounselorStudents() {
             </div>
           </Link>
         ))}
+        {students.length === 0 ? (
+          <Card>
+            <CardHeader emoji="🌿" title="No students found" subtitle="Pick a class to see students." />
+          </Card>
+        ) : null}
       </div>
     </Page>
   )

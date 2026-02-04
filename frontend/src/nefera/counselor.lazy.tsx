@@ -1,8 +1,53 @@
-import { submitAssessment } from '../api'
-import { useState } from 'react'
+import { getCounselorClasses, getCounselorStudents, getCounselorStudentDetail, submitAssessment } from '../api'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useNefera } from './state'
 import { Badge, Button, Card, CardBody, CardHeader, Page, Select, Toast, cx } from './ui'
+
+type CounselorStudentItem = {
+  id: string
+  name: string
+  class_name?: string
+  risk_status?: string
+}
+
+function useCounselorClassStudents() {
+  const [classes, setClasses] = useState<{ id: number; name: string }[]>([])
+  const [classId, setClassId] = useState<number | null>(null)
+  const [students, setStudents] = useState<CounselorStudentItem[]>([])
+
+  useEffect(() => {
+    getCounselorClasses()
+      .then((rows) => {
+        const list = rows ?? []
+        setClasses(list)
+        if (list.length > 0) {
+          setClassId((prev) => (prev == null ? Number(list[0].id) : prev))
+        }
+      })
+      .catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (classId == null) {
+      setStudents([])
+      return
+    }
+    getCounselorStudents(classId)
+      .then((rows) => {
+        const list = (rows ?? []).map((s: any) => ({
+          id: String(s.id),
+          name: s.name || s.email || 'Student',
+          class_name: s.class_name || 'Class',
+          risk_status: s.risk_status,
+        }))
+        setStudents(list)
+      })
+      .catch(console.error)
+  }, [classId])
+
+  return { classes, classId, setClassId, students }
+}
 
 function sum(nums: number[]) {
   return nums.reduce((a, b) => a + b, 0)
@@ -34,10 +79,19 @@ function flagLabel(flag: 'orange' | 'red' | 'crisis' | 'none') {
   }
 }
 
+function riskToFlag(risk?: string): 'orange' | 'red' | 'crisis' | 'none' {
+  if (!risk) return 'none'
+  const upper = risk.toUpperCase()
+  if (upper === 'ORANGE') return 'orange'
+  if (upper === 'RED') return 'red'
+  if (upper === 'CRISIS') return 'crisis'
+  return 'none'
+}
+
 export function CounselorAssessmentPhq9() {
   const { state, dispatch } = useNefera()
   const navigate = useNavigate()
-  const students = state.counselor.students
+  const { classes, classId, setClassId, students } = useCounselorClassStudents()
   const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
   const selected = students.find((s) => s.id === studentId) ?? students[0]
   const [answers, setAnswers] = useState<number[]>(selected?.phq9?.answers ?? Array.from({ length: 9 }, () => 0))
@@ -64,6 +118,14 @@ export function CounselorAssessmentPhq9() {
 
   const total = sum(answers)
 
+  useEffect(() => {
+    if (!students.length) return
+    if (!studentId || !students.find((s) => s.id === studentId)) {
+      setStudentId(students[0].id)
+      setAnswers(Array.from({ length: 9 }, () => 0))
+    }
+  }, [students, studentId])
+
   async function onSave() {
   const createdAt = new Date().toISOString()
 
@@ -82,6 +144,16 @@ export function CounselorAssessmentPhq9() {
       <Card>
         <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
+            <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Class</div>
+            <div className="mt-1">
+              <Select
+                value={classId != null ? String(classId) : ''}
+                onChange={(v) => setClassId(Number(v))}
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
@@ -91,7 +163,7 @@ export function CounselorAssessmentPhq9() {
                   const next = students.find((s) => s.id === v)
                   setAnswers(next?.phq9?.answers ?? Array.from({ length: 9 }, () => 0))
                 }}
-                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.grade}` }))}
+                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
             </div>
           </div>
@@ -138,7 +210,7 @@ export function CounselorAssessmentPhq9() {
 export function CounselorAssessmentGad7() {
   const { state, dispatch } = useNefera()
   const navigate = useNavigate()
-  const students = state.counselor.students
+  const { classes, classId, setClassId, students } = useCounselorClassStudents()
   const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
   const selected = students.find((s) => s.id === studentId) ?? students[0]
   const [answers, setAnswers] = useState<number[]>(selected?.gad7?.answers ?? Array.from({ length: 7 }, () => 0))
@@ -163,6 +235,14 @@ export function CounselorAssessmentGad7() {
 
   const total = sum(answers)
 
+  useEffect(() => {
+    if (!students.length) return
+    if (!studentId || !students.find((s) => s.id === studentId)) {
+      setStudentId(students[0].id)
+      setAnswers(Array.from({ length: 7 }, () => 0))
+    }
+  }, [students, studentId])
+
   async function onSave() {
   const createdAt = new Date().toISOString()
 
@@ -181,6 +261,16 @@ export function CounselorAssessmentGad7() {
       <Card>
         <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
+            <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Class</div>
+            <div className="mt-1">
+              <Select
+                value={classId != null ? String(classId) : ''}
+                onChange={(v) => setClassId(Number(v))}
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
@@ -190,7 +280,7 @@ export function CounselorAssessmentGad7() {
                   const next = students.find((s) => s.id === v)
                   setAnswers(next?.gad7?.answers ?? Array.from({ length: 7 }, () => 0))
                 }}
-                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.grade}` }))}
+                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
             </div>
           </div>
@@ -237,7 +327,7 @@ export function CounselorAssessmentGad7() {
 export function CounselorAssessmentCssrs() {
   const { state, dispatch } = useNefera()
   const navigate = useNavigate()
-  const students = state.counselor.students
+  const { classes, classId, setClassId, students } = useCounselorClassStudents()
   const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
   const selected = students.find((s) => s.id === studentId) ?? students[0]
   const [answers, setAnswers] = useState<boolean[]>(selected?.cssrs?.answers ?? Array.from({ length: 6 }, () => false))
@@ -253,6 +343,14 @@ export function CounselorAssessmentCssrs() {
   ]
 
   const positive = answers.filter(Boolean).length
+
+  useEffect(() => {
+    if (!students.length) return
+    if (!studentId || !students.find((s) => s.id === studentId)) {
+      setStudentId(students[0].id)
+      setAnswers(Array.from({ length: 6 }, () => false))
+    }
+  }, [students, studentId])
 
   async function onSave() {
   const createdAt = new Date().toISOString()
@@ -272,6 +370,16 @@ export function CounselorAssessmentCssrs() {
       <Card>
         <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
+            <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Class</div>
+            <div className="mt-1">
+              <Select
+                value={classId != null ? String(classId) : ''}
+                onChange={(v) => setClassId(Number(v))}
+                options={classes.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
@@ -281,7 +389,7 @@ export function CounselorAssessmentCssrs() {
                   const next = students.find((s) => s.id === v)
                   setAnswers(next?.cssrs?.answers ?? Array.from({ length: 6 }, () => false))
                 }}
-                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.grade}` }))}
+                options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
             </div>
           </div>
@@ -338,13 +446,37 @@ export function CounselorStudentDetail() {
   const params = useParams()
   const navigate = useNavigate()
   const student = state.counselor.students.find((s) => s.id === params.id)
+  const [studentData, setStudentData] = useState<{
+    id: string
+    name: string
+    grade: string
+    flags: 'orange' | 'red' | 'crisis' | 'none'
+  } | null>(student ? { id: student.id, name: student.name, grade: student.grade, flags: student.flags } : null)
   const [toast, setToast] = useState(false)
 
   const [phq9, setPhq9] = useState<number[]>(student?.phq9?.answers ?? Array.from({ length: 9 }, () => 0))
   const [gad7, setGad7] = useState<number[]>(student?.gad7?.answers ?? Array.from({ length: 7 }, () => 0))
   const [cssrs, setCssrs] = useState<boolean[]>(student?.cssrs?.answers ?? Array.from({ length: 6 }, () => false))
 
-  if (!student) {
+  useEffect(() => {
+    if (studentData || !params.id) return
+    getCounselorStudentDetail(params.id)
+      .then((data) => {
+        if (!data) return
+        setStudentData({
+          id: String(data.id),
+          name: data.name || data.email || 'Student',
+          grade: data.class_name || 'Class',
+          flags: riskToFlag(data.risk_status),
+        })
+        setPhq9(Array.from({ length: 9 }, () => 0))
+        setGad7(Array.from({ length: 7 }, () => 0))
+        setCssrs(Array.from({ length: 6 }, () => false))
+      })
+      .catch(console.error)
+  }, [params.id, studentData])
+
+  if (!student && !studentData) {
     return (
       <Page emoji="🧑‍🎓" title="Student" subtitle="Not found.">
         <Card>
@@ -359,7 +491,7 @@ export function CounselorStudentDetail() {
     )
   }
 
-  const studentId = student.id
+  const studentId = student?.id ?? studentData?.id ?? ''
 
   function onSave() {
     const createdAt = new Date().toISOString()
@@ -407,19 +539,21 @@ export function CounselorStudentDetail() {
     'Suicidal behavior',
   ]
 
+  const display = studentData ?? student
+
   return (
-    <Page emoji="🧑‍🎓" title={student.name} subtitle="Questionnaires and follow-up planning.">
+    <Page emoji="🧑‍🎓" title={display?.name ?? 'Student'} subtitle="Questionnaires and follow-up planning.">
       <Card>
         <CardBody className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Grade</div>
-            <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{student.grade}</div>
+            <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{display?.grade ?? 'Class'}</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone={flagTone(student.flags)}>{flagLabel(student.flags)}</Badge>
+            <Badge tone={flagTone(display?.flags ?? 'none')}>{flagLabel(display?.flags ?? 'none')}</Badge>
             <Select
-              value={student.flags}
-              onChange={(v) => dispatch({ type: 'teacher/setStudentFlags', studentId: student.id, flags: v as 'orange' | 'red' | 'crisis' | 'none' })}
+              value={display?.flags ?? 'none'}
+              onChange={(v) => setStudentData((prev) => (prev ? { ...prev, flags: v as 'orange' | 'red' | 'crisis' | 'none' } : prev))}
               options={[
                 { value: 'none', label: 'None' },
                 { value: 'orange', label: 'Watch' },

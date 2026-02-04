@@ -212,9 +212,10 @@ def update_student_risk_profile(db: Session, student_id: int):
     has_severe_recent = False
 
     for e in entries:
-        if e.mood == "WORRIED":
+        mood = (e.mood or "").upper()
+        if mood == "WORRIED":
             worried_days += 1
-        elif e.mood in ["SAD", "FLAT"]:
+        elif mood in ["SAD", "FLAT"]:
             sad_flat_days += 1
 
         # 🔴 new: if any entry has severe suicidal terms in last 7 days
@@ -284,8 +285,10 @@ def calculate_cssrs(answers: List[int]) -> Tuple[int, str, bool]:
         risk_band = "GREEN"
     elif q6 == 1:
         risk_band = "CRISIS"
+        is_crisis = True
     elif q5 == 1:
-         risk_band = "HIGH"
+        risk_band = "HIGH"
+        is_crisis = True
     elif q3 == 1 or q4 == 1:
         risk_band = "MODERATE"
     elif (q1 == 1 or q2 == 1):

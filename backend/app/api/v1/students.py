@@ -121,9 +121,10 @@ def create_daily_checkin(
     encrypted_journal = encrypt_text(checkin.journal_text)
 
     # 2c) Entry save karo with flags
+    mood = (checkin.mood or "").upper()
     entry = models.DailyJournal(
         student_id=profile.id,
-        mood=checkin.mood,
+        mood=mood,
         sleep_hours=checkin.sleep_hours,
         checkin_data=checkin_data,
         journal_text=encrypted_journal,
@@ -147,7 +148,7 @@ def create_daily_checkin(
             risk_band="CRISIS",
             details={
                 "matches": analysis["matches"],
-                "mood": checkin.mood,
+                "mood": mood,
                 "source": "daily_checkin",
             },
         )
@@ -176,15 +177,15 @@ def create_daily_checkin(
         )
 
     # Agar severe nahi, to normal mood-based messages
-    elif checkin.mood == "HAPPY":
+    elif mood == "HAPPY":
         message = "🎉 Awesome day! Noticing good moments helps your brain."
-    elif checkin.mood == "WORRIED":
+    elif mood == "WORRIED":
         message = "Brave sharing your worries."
         tool = "Breathing: Inhale nose 1-2-3, exhale mouth 1-2-3-4, do 3 times."
-    elif checkin.mood == "SAD":
+    elif mood == "SAD":
         message = "Your feelings matter. You are not alone."
         tool = "Hand on heart, hug arms, 3 slow deep breaths."
-    elif checkin.mood == "FLAT":
+    elif mood == "FLAT":
         message = "Low energy days are normal."
         tool = "Stand, stretch arms high, 3 deep breaths."
 
@@ -199,7 +200,7 @@ def submit_assessment(
 ):
     profile = _get_current_student_profile(db, payload)
 
-        # 1. Score calculate
+    # 1. Score calculate
     if assessment.type == "PHQ9":
         score, risk_level, is_alert = calculate_phq9(assessment.answers)
     elif assessment.type == "GAD7":
@@ -262,21 +263,29 @@ def submit_assessment(
     #       * MODERATE           -> at least RED
     #       * LOW                -> optionally ORANGE
 
-        if assessment.type == "PHQ9":
-            if is_alert:
-                profile.risk_status = "CRISIS"   # suicidal flag -> CRISIS in student profile
-            elif risk_level in ["RED"]:
-                if profile.risk_status != "CRISIS":
-                    profile.risk_status = "RED"
+    if assessment.type == "PHQ9":
+        if is_alert:
+            profile.risk_status = "CRISIS"   # suicidal flag -> CRISIS in student profile
+        elif risk_level in ["RED"]:
+            if profile.risk_status != "CRISIS":
+                profile.risk_status = "RED"
+        elif risk_level in ["ORANGE"] and profile.risk_status not in ["RED", "CRISIS"]:
+            profile.risk_status = "ORANGE"
 
-        elif assessment.type == "CSSRS":
-         if risk_level in ["HIGH", "CRISIS"]:
+    elif assessment.type == "GAD7":
+        # Treat GAD7 as supportive risk signal
+        if risk_level in ["RED"] and profile.risk_status not in ["CRISIS"]:
+            profile.risk_status = "RED"
+        elif risk_level in ["ORANGE", "YELLOW"] and profile.risk_status not in ["RED", "CRISIS"]:
+            profile.risk_status = "ORANGE"
+
+    elif assessment.type == "CSSRS":
+        if risk_level in ["HIGH", "CRISIS"]:
             profile.risk_status = "CRISIS"
         elif risk_level == "MODERATE":
             if profile.risk_status != "CRISIS":
                 profile.risk_status = "RED"
         elif risk_level == "LOW":
-            # Optional: LOW ko ORANGE treat kar sakte ho
             if profile.risk_status not in ["RED", "CRISIS"]:
                 profile.risk_status = "ORANGE"
 

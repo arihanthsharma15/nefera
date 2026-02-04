@@ -75,3 +75,55 @@ def teacher_class_mood(
             "crisis": risk_data.get("CRISIS", 0),
         },
     }
+
+
+@router.get("/students")
+def teacher_students(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    _role = Depends(require_role("TEACHER")),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["TEACHER"])),
+):
+    """
+    Teacher view: list students for a class.
+    NOTE: Abhi class_id query param se aa raha hai
+    (later teacher-class mapping se aayega).
+    """
+    if class_id is None:
+        classroom = db.query(models.Class).first()
+    else:
+        classroom = (
+            db.query(models.Class)
+            .filter(models.Class.id == class_id)
+            .first()
+        )
+    if not classroom:
+        raise HTTPException(status_code=404, detail="Class not found")
+
+    students = (
+        db.query(models.StudentProfile)
+        .filter(models.StudentProfile.class_id == classroom.id)
+        .all()
+    )
+
+    payload = []
+    for student in students:
+        user = student.user
+        name = None
+        if user:
+            name = user.full_name or user.email
+        if not name:
+            name = student.roll_number or f"Student {student.id}"
+        payload.append({
+            "id": student.id,
+            "name": name,
+            "roll_number": student.roll_number,
+            "class_name": classroom.name,
+            "risk_status": student.risk_status,
+        })
+
+    return {
+        "class_id": classroom.id,
+        "class_name": classroom.name,
+        "students": payload,
+    }

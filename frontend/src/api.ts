@@ -63,6 +63,17 @@ export async function syncSupabaseUser() {
   return res.json(); // { id, email, role, name }
 }
 
+export async function resolveLoginIdentifier(identifier: string) {
+  const res = await fetch(`${API_BASE}/auth/resolve-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier }),
+  });
+
+  if (!res.ok) throw new Error("Login identifier not found");
+  return res.json(); // { email }
+}
+
 /* ------------------ STUDENT APIs ------------------ */
 export async function getStudentInbox() {
   const res = await fetch(`${API_BASE}/students/inbox`, {
@@ -70,6 +81,15 @@ export async function getStudentInbox() {
   });
 
   if (!res.ok) throw new Error("Inbox fetch failed");
+  return res.json();
+}
+
+export async function getStudentJournals(days: number = 14) {
+  const res = await fetch(`${API_BASE}/students/journals?days=${days}`, {
+    headers: getAuthHeaders("student"),
+  });
+
+  if (!res.ok) throw new Error("Journals fetch failed");
   return res.json();
 }
 
@@ -128,6 +148,25 @@ export async function getCounselorDashboard() {
   return res.json();
 }
 
+export async function getCounselorClasses() {
+  const res = await fetch(`${API_BASE}/counselors/classes`, {
+    headers: getAuthHeaders("counselor"),
+  });
+
+  if (!res.ok) throw new Error("Counselor classes failed");
+  return res.json();
+}
+
+export async function getCounselorStudents(classId?: number) {
+  const query = classId ? `?class_id=${classId}` : "";
+  const res = await fetch(`${API_BASE}/counselors/students${query}`, {
+    headers: getAuthHeaders("counselor"),
+  });
+
+  if (!res.ok) throw new Error("Counselor students failed");
+  return res.json();
+}
+
 export async function getCounselorRiskyStudents() {
   const res = await fetch(`${API_BASE}/counselors/students/risky`, {
     headers: getAuthHeaders("counselor"),
@@ -163,6 +202,16 @@ export async function getTeacherDashboard(classId?: number) {
   });
 
   if (!res.ok) throw new Error("Teacher dashboard failed");
+  return res.json();
+}
+
+export async function getTeacherStudents(classId?: number) {
+  const query = classId ? `?class_id=${classId}` : "";
+  const res = await fetch(`${API_BASE}/teachers/students${query}`, {
+    headers: getAuthHeaders("teacher"),
+  });
+
+  if (!res.ok) throw new Error("Teacher students failed");
   return res.json();
 }
 

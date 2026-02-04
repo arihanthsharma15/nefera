@@ -41,6 +41,7 @@ class User(Base):
     hashed_password = Column(String, nullable=True)
     role = Column(Enum(UserRole))
     school_id = Column(Integer, ForeignKey("schools.id"))
+    login_id = Column(String, unique=True, index=True, nullable=True)
 
     full_name = Column(String, nullable=True)
 

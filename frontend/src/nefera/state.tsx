@@ -149,7 +149,7 @@ type Action =
   | { type: 'principal/addBroadcast'; item: { id: string; createdAt: string; title: string; body: string } }
   | { type: 'principal/addReport'; report: IncidentReport }
 
-const STORAGE_KEY = 'nefera.v1'
+const STORAGE_KEY = 'nefera.v2'
 
 function isoDate(d: Date) {
   const year = d.getFullYear()
@@ -217,33 +217,7 @@ export function feelingEmoji(feeling: Feeling) {
 function initialState(): NeferaState {
   const today = getTodayISO()
 
-  const studentRecords: StudentRecord[] = [
-    { id: 'stu_1', name: 'Amina K.', grade: 'Grade 8', flags: 'orange', latestFeeling: 'worried', notes: [] },
-    { id: 'stu_2', name: 'Jayden P.', grade: 'Grade 10', flags: 'red', latestFeeling: 'sad', notes: [] },
-    { id: 'stu_3', name: 'Samira L.', grade: 'Grade 7', flags: 'none', latestFeeling: 'neutral', notes: [] },
-    { id: 'stu_4', name: 'Noah R.', grade: 'Grade 11', flags: 'crisis', latestFeeling: 'sad', notes: [] },
-  ]
-
-  const inbox: Message[] = [
-    {
-      id: 'msg_1',
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
-      fromRole: 'teacher',
-      fromName: 'Ms. Clara',
-      toRole: 'student',
-      subject: 'Proud of your effort',
-      body: 'I noticed you stayed focused today. If anything feels heavy, you can always talk to me after class.',
-    },
-    {
-      id: 'msg_2',
-      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 30).toISOString(),
-      fromRole: 'counselor',
-      fromName: 'Counselor Imani',
-      toRole: 'student',
-      subject: 'Check-in reminder',
-      body: 'A gentle reminder: daily check-ins help you spot patterns. One minute is enough.',
-    },
-  ]
+  const studentRecords: StudentRecord[] = []
 
   return {
     selectedRole: undefined,
@@ -253,64 +227,20 @@ function initialState(): NeferaState {
       checkIns: [],
       sleepLogs: [],
       journal: [],
-      habits: [
-        { id: 'hab_1', name: 'Drink Water', emoji: '💧', createdAt: new Date().toISOString(), completedDates: [today] },
-        { id: 'hab_2', name: 'Stretch', emoji: '🧘', createdAt: new Date().toISOString(), completedDates: [] },
-        { id: 'hab_3', name: 'Read 10 mins', emoji: '📚', createdAt: new Date().toISOString(), completedDates: [] },
-      ],
-      groups: [
-        { id: 'grp_1', name: 'Study Support', emoji: '📘', joined: true },
-        { id: 'grp_2', name: 'Friendship Circle', emoji: '🤝', joined: false },
-        { id: 'grp_3', name: 'Calm Breathing', emoji: '🌬️', joined: true },
-        { id: 'grp_4', name: 'Sports & Confidence', emoji: '⚽', joined: false },
-      ],
-      inbox,
-      openCircle: [
-        {
-          id: 'post_1',
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-          authorName: 'Mina',
-          anonymous: true,
-          body: 'Does anyone else feel nervous before presentations? I want tips 🥲',
-          likes: ['like_1', 'like_2'],
-          comments: [
-            {
-              id: 'c_1',
-              createdAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
-              authorName: 'Jay',
-              body: 'Try 4-7-8 breathing right before. It helps me a lot.',
-            },
-          ],
-        },
-        {
-          id: 'post_2',
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 20).toISOString(),
-          authorName: 'Asha',
-          anonymous: false,
-          body: 'Small win: I asked for help in math today and it went fine 😄',
-          likes: ['like_1'],
-          comments: [],
-        },
-      ],
-      incidents: [
-        {
-          id: 'inc_1',
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-          type: 'Bullying / Harassment',
-          description: 'Someone keeps taking my lunch and laughing about it.',
-          anonymous: true,
-          status: 'reviewing',
-        },
-      ],
+      habits: [],
+      groups: [],
+      inbox: [],
+      openCircle: [],
+      incidents: [],
       lastPromptedJournalAt: undefined,
     },
     teacher: {
-      classes: [{ id: 'class_1', name: 'Grade 8A', studentIds: studentRecords.map((s) => s.id) }],
+      classes: [],
       students: studentRecords,
       broadcasts: [],
     },
     parent: {
-      children: [{ id: 'child_1', name: 'Amina K.', grade: 'Grade 8' }],
+      children: [],
       sent: [],
       reports: [],
     },
@@ -520,7 +450,14 @@ export function useAuth() {
   const { state, dispatch } = useNefera()
   const selectRole = (role: Role) => dispatch({ type: 'selectRole', role })
   const login = (name: string, role: Role) => dispatch({ type: 'login', name, role })
-  const logout = () => dispatch({ type: 'logout' })
+  const logout = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    dispatch({ type: 'logout' })
+  }
 
   return { user: state.user, selectedRole: state.selectedRole, selectRole, login, logout }
 }

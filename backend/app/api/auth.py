@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.core.security.supabase_jwt import verify_supabase_jwt
 from typing import Optional
 import urllib.request
@@ -86,10 +87,23 @@ def supabase_login(
     # Ensure local user exists
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        user = User(email=email, role=role_enum, full_name=payload.get("user_metadata", {}).get("full_name") or payload.get("name"))
+        meta = payload.get("user_metadata") or {}
+        user = User(
+            email=email,
+            role=role_enum,
+            full_name=meta.get("full_name") or payload.get("name"),
+            login_id=meta.get("school_id") or meta.get("login_id"),
+        )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        # Backfill login_id if provided in metadata
+        meta = payload.get("user_metadata") or {}
+        incoming_login_id = meta.get("school_id") or meta.get("login_id")
+        if incoming_login_id and not user.login_id:
+            user.login_id = incoming_login_id
+            db.commit()
 
 
     # If student, ensure StudentProfile exists
@@ -104,6 +118,46 @@ def supabase_login(
         "role": user.role.value if hasattr(user.role, "value") else user.role,
         "name": user.full_name,
     }
+
+
+# ---------------- LOGIN RESOLUTION ----------------
+class ResolveLoginRequest(BaseModel):
+    identifier: str
+
+
+@router.post("/resolve-login")
+def resolve_login(
+    data: ResolveLoginRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Accepts a School ID or Email and returns the email to use for Supabase login.
+    For now: School ID maps to StudentProfile.roll_number.
+    """
+    identifier = (data.identifier or "").strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="Missing identifier")
+
+    if "@" in identifier:
+        return {"email": identifier}
+
+    user = (
+        db.query(User)
+        .filter(func.lower(User.login_id) == identifier.lower())
+        .first()
+    )
+    if user and user.email:
+        return {"email": user.email}
+
+    profile = (
+        db.query(StudentProfile)
+        .filter(StudentProfile.roll_number == identifier)
+        .first()
+    )
+    if profile and profile.user and profile.user.email:
+        return {"email": profile.user.email}
+
+    raise HTTPException(status_code=404, detail="No user found for identifier")
 
 def _fetch_supabase_user_metadata(email: str) -> Optional[dict]:
     """Fetch user metadata from Supabase Admin API using the service role key.

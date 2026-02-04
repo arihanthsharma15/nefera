@@ -63,11 +63,18 @@ def main():
             role=models.UserRole.PRINCIPAL,
             school_id=school.id,
             full_name="Demo Principal",
+            login_id="PR-001",
         )
         db.add(principal_user)
         db.commit()
         db.refresh(principal_user)
         print("✅ Principal created")
+    else:
+        if not principal_user.full_name:
+            principal_user.full_name = "Demo Principal"
+        if not principal_user.login_id:
+            principal_user.login_id = "PR-001"
+        db.commit()
 
     # ---------------------------
     # COUNSELOR
@@ -82,11 +89,18 @@ def main():
             role=models.UserRole.COUNSELOR,
             school_id=school.id,
             full_name="School Counselor",
+            login_id="CO-001",
         )
         db.add(counselor_user)
         db.commit()
         db.refresh(counselor_user)
         print("✅ Counselor created")
+    else:
+        if not counselor_user.full_name:
+            counselor_user.full_name = "School Counselor"
+        if not counselor_user.login_id:
+            counselor_user.login_id = "CO-001"
+        db.commit()
 
     # ---------------------------
     # TEACHER
@@ -101,14 +115,21 @@ def main():
             role=models.UserRole.TEACHER,
             school_id=school.id,
             full_name="Demo Teacher",
+            login_id="TE-001",
         )
         db.add(teacher_user)
         db.commit()
         db.refresh(teacher_user)
         print("✅ Teacher created")
+    else:
+        if not teacher_user.full_name:
+            teacher_user.full_name = "Demo Teacher"
+        if not teacher_user.login_id:
+            teacher_user.login_id = "TE-001"
+        db.commit()
 
     # ---------------------------
-    # PARENT
+    # PARENT 1
     # ---------------------------
     parent_email = "parent@test.com"
     parent_user = db.query(models.User).filter_by(email=parent_email).first()
@@ -120,11 +141,44 @@ def main():
             role=models.UserRole.PARENT,
             school_id=school.id,
             full_name="Demo Parent",
+            login_id="PA-001",
         )
         db.add(parent_user)
         db.commit()
         db.refresh(parent_user)
         print("✅ Parent created")
+    else:
+        if not parent_user.full_name:
+            parent_user.full_name = "Demo Parent"
+        if not parent_user.login_id:
+            parent_user.login_id = "PA-001"
+        db.commit()
+
+    # ---------------------------
+    # PARENT 2
+    # ---------------------------
+    parent2_email = "parent2@test.com"
+    parent2_user = db.query(models.User).filter_by(email=parent2_email).first()
+
+    if not parent2_user:
+        parent2_user = models.User(
+            email=parent2_email,
+            hashed_password=None,
+            role=models.UserRole.PARENT,
+            school_id=school.id,
+            full_name="Demo Parent 2",
+            login_id="PA-002",
+        )
+        db.add(parent2_user)
+        db.commit()
+        db.refresh(parent2_user)
+        print("✅ Parent2 created")
+    else:
+        if not parent2_user.full_name:
+            parent2_user.full_name = "Demo Parent 2"
+        if not parent2_user.login_id:
+            parent2_user.login_id = "PA-002"
+        db.commit()
 
     # ---------------------------
     # STUDENT USER
@@ -139,11 +193,18 @@ def main():
             role=models.UserRole.STUDENT,
             school_id=school.id,
             full_name="Demo Student",
+            login_id="ST-001",
         )
         db.add(student_user)
         db.commit()
         db.refresh(student_user)
         print("✅ Student user created")
+    else:
+        if not student_user.full_name:
+            student_user.full_name = "Demo Student"
+        if not student_user.login_id:
+            student_user.login_id = "ST-001"
+        db.commit()
 
     # ---------------------------
     # STUDENT PROFILE
@@ -171,11 +232,18 @@ def main():
             role=models.UserRole.STUDENT,
             school_id=school.id,
             full_name="Demo Student 2",
+            login_id="ST-002",
         )
         db.add(student2_user)
         db.commit()
         db.refresh(student2_user)
         print("✅ Student2 user created")
+    else:
+        if not student2_user.full_name:
+            student2_user.full_name = "Demo Student 2"
+        if not student2_user.login_id:
+            student2_user.login_id = "ST-002"
+        db.commit()
 
     profile2 = db.query(models.StudentProfile).filter_by(user_id=student2_user.id).first()
     if not profile2:

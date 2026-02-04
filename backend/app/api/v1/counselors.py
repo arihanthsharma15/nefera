@@ -122,7 +122,7 @@ def get_at_risk_students(
         result.append(
             {
                 "id": s.id,
-                "name": user.full_name if user else None,
+                "name": user.full_name if (user and user.full_name) else (user.email if user else None),
                 "risk_status": s.risk_status,
                 "roll_number": s.roll_number,
                 "streak": s.streak_count,
@@ -244,4 +244,62 @@ def get_incident_reports_for_counselor(
                 is_anonymous=(r.student_id is None),
             )
         )
+    return result
+
+
+# --------------------------------------
+# 3.5) Classes list
+# --------------------------------------
+@router.get("/classes")
+def get_classes(
+    db: Session = Depends(get_db),
+    _role = Depends(require_role("COUNSELOR")),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
+):
+    classes = db.query(models.Class).order_by(models.Class.name.asc()).all()
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+        }
+        for c in classes
+    ]
+
+
+# --------------------------------------
+# 3.6) Students by class
+# --------------------------------------
+@router.get("/students")
+def get_students(
+    class_id: int | None = None,
+    db: Session = Depends(get_db),
+    _role = Depends(require_role("COUNSELOR")),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["COUNSELOR"])),
+):
+    q = db.query(models.StudentProfile)
+    if class_id is not None:
+        q = q.filter(models.StudentProfile.class_id == class_id)
+    students = q.all()
+
+    result = []
+    for s in students:
+        user = s.user
+        classroom = s.classroom
+        name = None
+        if user:
+            name = user.full_name or user.email
+        if not name:
+            name = s.roll_number or f"Student {s.id}"
+        result.append(
+            {
+                "id": s.id,
+                "name": name,
+                "risk_status": s.risk_status,
+                "roll_number": s.roll_number,
+                "email": user.email if user else None,
+                "class_id": s.class_id,
+                "class_name": classroom.name if classroom else None,
+            }
+        )
+
     return result
