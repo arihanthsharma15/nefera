@@ -4,12 +4,53 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 
 from app.db.base import get_db
-from app import models
+from app import models, schemas
 from app.core.deps.auth import require_role
 from app.core.deps.entrypoint import require_entrypoint
 from app.core.constants import ROLES, ENTRYPOINTS
 
 router = APIRouter(prefix="/teachers", tags=["teachers"])
+
+@router.post("/broadcast")
+def teacher_broadcast(
+    payload: schemas.BroadcastCreate,
+    db: Session = Depends(get_db),
+    _role = Depends(require_role("TEACHER")),
+    _ep   = Depends(require_entrypoint(ENTRYPOINTS["TEACHER"])),
+):
+    """
+    Teacher sends a message to their class.
+    """
+    teacher_user = None
+    if isinstance(_role, dict) and _role.get("email"):
+        teacher_user = db.query(models.User).filter(models.User.email == _role["email"]).first()
+
+    if not teacher_user or not teacher_user.school_id:
+        raise HTTPException(status_code=404, detail="Teacher not linked to a school")
+
+    class_id = teacher_user.class_id
+    if not class_id:
+        # fallback to first class in school
+        classroom = db.query(models.Class).filter(models.Class.school_id == teacher_user.school_id).first()
+        class_id = classroom.id if classroom else None
+
+    msg = models.BroadcastMessage(
+        sender_role=models.UserRole.TEACHER,
+        school_id=teacher_user.school_id,
+        class_id=class_id,
+        student_profile_id=None,
+        content=payload.content,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+
+    return {
+        "id": msg.id,
+        "sender_role": msg.sender_role.value,
+        "content": msg.content,
+        "created_at": msg.created_at,
+    }
 
 @router.get("/dashboard")
 def teacher_class_mood(
@@ -24,14 +65,17 @@ def teacher_class_mood(
     NOTE: Abhi class_id query param se aa raha hai
     (later teacher-class mapping se aayega).
     """
+    classroom = None
     if class_id is None:
-        classroom = db.query(models.Class).first()
+        teacher_user = None
+        if isinstance(_role, dict) and _role.get("email"):
+            teacher_user = db.query(models.User).filter(models.User.email == _role["email"]).first()
+        if teacher_user and teacher_user.class_id:
+            classroom = db.query(models.Class).filter(models.Class.id == teacher_user.class_id).first()
     else:
-        classroom = (
-            db.query(models.Class)
-            .filter(models.Class.id == class_id)
-            .first()
-        )
+        classroom = db.query(models.Class).filter(models.Class.id == class_id).first()
+    if classroom is None:
+        classroom = db.query(models.Class).first()
     if not classroom:
         raise HTTPException(status_code=404, detail="Class not found")
     class_id = classroom.id
@@ -89,14 +133,17 @@ def teacher_students(
     NOTE: Abhi class_id query param se aa raha hai
     (later teacher-class mapping se aayega).
     """
+    classroom = None
     if class_id is None:
-        classroom = db.query(models.Class).first()
+        teacher_user = None
+        if isinstance(_role, dict) and _role.get("email"):
+            teacher_user = db.query(models.User).filter(models.User.email == _role["email"]).first()
+        if teacher_user and teacher_user.class_id:
+            classroom = db.query(models.Class).filter(models.Class.id == teacher_user.class_id).first()
     else:
-        classroom = (
-            db.query(models.Class)
-            .filter(models.Class.id == class_id)
-            .first()
-        )
+        classroom = db.query(models.Class).filter(models.Class.id == class_id).first()
+    if classroom is None:
+        classroom = db.query(models.Class).first()
     if not classroom:
         raise HTTPException(status_code=404, detail="Class not found")
 

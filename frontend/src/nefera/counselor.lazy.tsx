@@ -1,4 +1,4 @@
-import { getCounselorClasses, getCounselorStudents, getCounselorStudentDetail, submitAssessment } from '../api'
+import { getCounselorClasses, getCounselorStudents, getCounselorStudentDetail, submitCounselorAssessment } from '../api'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useNefera } from './state'
@@ -9,6 +9,17 @@ type CounselorStudentItem = {
   name: string
   class_name?: string
   risk_status?: string
+  phq9?: { answers: number[] }
+  gad7?: { answers: number[] }
+  cssrs?: { answers: boolean[] }
+}
+
+type CounselorStudentRow = {
+  id: string | number
+  name?: string | null
+  email?: string | null
+  class_name?: string | null
+  risk_status?: string | null
 }
 
 function useCounselorClassStudents() {
@@ -30,12 +41,11 @@ function useCounselorClassStudents() {
 
   useEffect(() => {
     if (classId == null) {
-      setStudents([])
       return
     }
     getCounselorStudents(classId)
       .then((rows) => {
-        const list = (rows ?? []).map((s: any) => ({
+        const list = (rows ?? []).map((s: CounselorStudentRow) => ({
           id: String(s.id),
           name: s.name || s.email || 'Student',
           class_name: s.class_name || 'Class',
@@ -89,12 +99,14 @@ function riskToFlag(risk?: string): 'orange' | 'red' | 'crisis' | 'none' {
 }
 
 export function CounselorAssessmentPhq9() {
-  const { state, dispatch } = useNefera()
+  const { dispatch } = useNefera()
   const navigate = useNavigate()
   const { classes, classId, setClassId, students } = useCounselorClassStudents()
-  const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
-  const selected = students.find((s) => s.id === studentId) ?? students[0]
-  const [answers, setAnswers] = useState<number[]>(selected?.phq9?.answers ?? Array.from({ length: 9 }, () => 0))
+  const [studentId, setStudentId] = useState<string>('')
+  const [answersByStudent, setAnswersByStudent] = useState<Record<string, number[]>>({})
+  const selectedId = studentId && students.find((s) => s.id === studentId) ? studentId : students[0]?.id ?? ''
+  const selected = students.find((s) => s.id === selectedId)
+  const answers = answersByStudent[selectedId] ?? selected?.phq9?.answers ?? Array.from({ length: 9 }, () => 0)
   const [toast, setToast] = useState(false)
 
   const scaleOptions = [
@@ -118,26 +130,21 @@ export function CounselorAssessmentPhq9() {
 
   const total = sum(answers)
 
-  useEffect(() => {
-    if (!students.length) return
-    if (!studentId || !students.find((s) => s.id === studentId)) {
-      setStudentId(students[0].id)
-      setAnswers(Array.from({ length: 9 }, () => 0))
-    }
-  }, [students, studentId])
-
   async function onSave() {
-  const createdAt = new Date().toISOString()
+    const createdAt = new Date().toISOString()
 
-  await submitAssessment({
-    type: "PHQ9",
-    answers,
-  });
+    if (!selectedId) return
 
-  dispatch({ type: 'counselor/savePhq9', studentId: selected?.id ?? 's_1', answers, createdAt })
+    await submitCounselorAssessment({
+      student_id: selectedId,
+      type: "PHQ9",
+      answers,
+    })
 
-  setToast(true)
-}
+    dispatch({ type: 'counselor/savePhq9', studentId: selectedId, answers, createdAt })
+
+    setToast(true)
+  }
 
   return (
     <Page emoji="📋" title="PHQ-9" subtitle="Score and save a student questionnaire.">
@@ -157,11 +164,14 @@ export function CounselorAssessmentPhq9() {
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
-                value={selected?.id ?? ''}
+                value={selectedId}
                 onChange={(v) => {
                   setStudentId(v)
                   const next = students.find((s) => s.id === v)
-                  setAnswers(next?.phq9?.answers ?? Array.from({ length: 9 }, () => 0))
+                  setAnswersByStudent((prev) => ({
+                    ...prev,
+                    [v]: next?.phq9?.answers ?? Array.from({ length: 9 }, () => 0),
+                  }))
                 }}
                 options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
@@ -181,7 +191,18 @@ export function CounselorAssessmentPhq9() {
           <div key={q} className="rounded-2xl border border-white/70 bg-white/60 p-4">
             <div className="text-sm font-semibold text-[rgb(var(--nefera-ink))]">{q}</div>
             <div className="mt-3">
-              <Select value={String(answers[idx] ?? 0)} onChange={(v) => setAnswers((arr) => arr.map((x, i) => (i === idx ? Number(v) : x)))} options={scaleOptions} />
+              <Select
+                value={String(answers[idx] ?? 0)}
+                onChange={(v) => {
+                  if (!selectedId) return
+                  setAnswersByStudent((prev) => {
+                    const current = prev[selectedId] ?? selected?.phq9?.answers ?? Array.from({ length: 9 }, () => 0)
+                    const next = current.map((x, i) => (i === idx ? Number(v) : x))
+                    return { ...prev, [selectedId]: next }
+                  })
+                }}
+                options={scaleOptions}
+              />
             </div>
           </div>
         ))}
@@ -208,12 +229,14 @@ export function CounselorAssessmentPhq9() {
 }
 
 export function CounselorAssessmentGad7() {
-  const { state, dispatch } = useNefera()
+  const { dispatch } = useNefera()
   const navigate = useNavigate()
   const { classes, classId, setClassId, students } = useCounselorClassStudents()
-  const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
-  const selected = students.find((s) => s.id === studentId) ?? students[0]
-  const [answers, setAnswers] = useState<number[]>(selected?.gad7?.answers ?? Array.from({ length: 7 }, () => 0))
+  const [studentId, setStudentId] = useState<string>('')
+  const [answersByStudent, setAnswersByStudent] = useState<Record<string, number[]>>({})
+  const selectedId = studentId && students.find((s) => s.id === studentId) ? studentId : students[0]?.id ?? ''
+  const selected = students.find((s) => s.id === selectedId)
+  const answers = answersByStudent[selectedId] ?? selected?.gad7?.answers ?? Array.from({ length: 7 }, () => 0)
   const [toast, setToast] = useState(false)
 
   const scaleOptions = [
@@ -235,26 +258,21 @@ export function CounselorAssessmentGad7() {
 
   const total = sum(answers)
 
-  useEffect(() => {
-    if (!students.length) return
-    if (!studentId || !students.find((s) => s.id === studentId)) {
-      setStudentId(students[0].id)
-      setAnswers(Array.from({ length: 7 }, () => 0))
-    }
-  }, [students, studentId])
-
   async function onSave() {
-  const createdAt = new Date().toISOString()
+    const createdAt = new Date().toISOString()
 
-  await submitAssessment({
-    type: "GAD7",
-    answers,
-  });
+    if (!selectedId) return
 
-  dispatch({ type: 'counselor/saveGad7', studentId: selected?.id ?? 's_1', answers, createdAt })
+    await submitCounselorAssessment({
+      student_id: selectedId,
+      type: "GAD7",
+      answers,
+    })
 
-  setToast(true)
-}
+    dispatch({ type: 'counselor/saveGad7', studentId: selectedId, answers, createdAt })
+
+    setToast(true)
+  }
 
   return (
     <Page emoji="🧭" title="GAD-7" subtitle="Score and save a student questionnaire.">
@@ -274,11 +292,14 @@ export function CounselorAssessmentGad7() {
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
-                value={selected?.id ?? ''}
+                value={selectedId}
                 onChange={(v) => {
                   setStudentId(v)
                   const next = students.find((s) => s.id === v)
-                  setAnswers(next?.gad7?.answers ?? Array.from({ length: 7 }, () => 0))
+                  setAnswersByStudent((prev) => ({
+                    ...prev,
+                    [v]: next?.gad7?.answers ?? Array.from({ length: 7 }, () => 0),
+                  }))
                 }}
                 options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
@@ -298,7 +319,18 @@ export function CounselorAssessmentGad7() {
           <div key={q} className="rounded-2xl border border-white/70 bg-white/60 p-4">
             <div className="text-sm font-semibold text-[rgb(var(--nefera-ink))]">{q}</div>
             <div className="mt-3">
-              <Select value={String(answers[idx] ?? 0)} onChange={(v) => setAnswers((arr) => arr.map((x, i) => (i === idx ? Number(v) : x)))} options={scaleOptions} />
+              <Select
+                value={String(answers[idx] ?? 0)}
+                onChange={(v) => {
+                  if (!selectedId) return
+                  setAnswersByStudent((prev) => {
+                    const current = prev[selectedId] ?? selected?.gad7?.answers ?? Array.from({ length: 7 }, () => 0)
+                    const next = current.map((x, i) => (i === idx ? Number(v) : x))
+                    return { ...prev, [selectedId]: next }
+                  })
+                }}
+                options={scaleOptions}
+              />
             </div>
           </div>
         ))}
@@ -325,12 +357,14 @@ export function CounselorAssessmentGad7() {
 }
 
 export function CounselorAssessmentCssrs() {
-  const { state, dispatch } = useNefera()
+  const { dispatch } = useNefera()
   const navigate = useNavigate()
   const { classes, classId, setClassId, students } = useCounselorClassStudents()
-  const [studentId, setStudentId] = useState<string>(students[0]?.id ?? '')
-  const selected = students.find((s) => s.id === studentId) ?? students[0]
-  const [answers, setAnswers] = useState<boolean[]>(selected?.cssrs?.answers ?? Array.from({ length: 6 }, () => false))
+  const [studentId, setStudentId] = useState<string>('')
+  const [answersByStudent, setAnswersByStudent] = useState<Record<string, boolean[]>>({})
+  const selectedId = studentId && students.find((s) => s.id === studentId) ? studentId : students[0]?.id ?? ''
+  const selected = students.find((s) => s.id === selectedId)
+  const answers = answersByStudent[selectedId] ?? selected?.cssrs?.answers ?? Array.from({ length: 6 }, () => false)
   const [toast, setToast] = useState(false)
 
   const items = [
@@ -344,26 +378,21 @@ export function CounselorAssessmentCssrs() {
 
   const positive = answers.filter(Boolean).length
 
-  useEffect(() => {
-    if (!students.length) return
-    if (!studentId || !students.find((s) => s.id === studentId)) {
-      setStudentId(students[0].id)
-      setAnswers(Array.from({ length: 6 }, () => false))
-    }
-  }, [students, studentId])
-
   async function onSave() {
-  const createdAt = new Date().toISOString()
+    const createdAt = new Date().toISOString()
 
-  await submitAssessment({
-    type: "CSSRS",
-    answers: answers.map(a => a ? 1 : 0),
-  });
+    if (!selectedId) return
 
-  dispatch({ type: 'counselor/saveCssrs', studentId: selected?.id ?? 's_1', answers, createdAt })
+    await submitCounselorAssessment({
+      student_id: selectedId,
+      type: "CSSRS",
+      answers: answers.map((a) => (a ? 1 : 0)),
+    })
 
-  setToast(true)
-}
+    dispatch({ type: 'counselor/saveCssrs', studentId: selectedId, answers, createdAt })
+
+    setToast(true)
+  }
 
   return (
     <Page emoji="🛟" title="C-SSRS" subtitle="Record and save suicide risk screening responses.">
@@ -383,11 +412,14 @@ export function CounselorAssessmentCssrs() {
             <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student</div>
             <div className="mt-1">
               <Select
-                value={selected?.id ?? ''}
+                value={selectedId}
                 onChange={(v) => {
                   setStudentId(v)
                   const next = students.find((s) => s.id === v)
-                  setAnswers(next?.cssrs?.answers ?? Array.from({ length: 6 }, () => false))
+                  setAnswersByStudent((prev) => ({
+                    ...prev,
+                    [v]: next?.cssrs?.answers ?? Array.from({ length: 6 }, () => false),
+                  }))
                 }}
                 options={students.map((s) => ({ value: s.id, label: `${s.name} • ${s.class_name ?? 'Class'}` }))}
               />
@@ -407,7 +439,14 @@ export function CounselorAssessmentCssrs() {
           <button
             key={q}
             type="button"
-            onClick={() => setAnswers((arr) => arr.map((x, i) => (i === idx ? !x : x)))}
+            onClick={() => {
+              if (!selectedId) return
+              setAnswersByStudent((prev) => {
+                const current = prev[selectedId] ?? selected?.cssrs?.answers ?? Array.from({ length: 6 }, () => false)
+                const next = current.map((x, i) => (i === idx ? !x : x))
+                return { ...prev, [selectedId]: next }
+              })
+            }}
             className={cx(
               'flex items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/60 p-4 text-left shadow-lg shadow-black/5 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/80 hover:shadow-xl active:translate-y-0',
               answers[idx] ? 'ring-4 ring-[rgba(244,63,94,0.14)]' : '',
@@ -451,6 +490,9 @@ export function CounselorStudentDetail() {
     name: string
     grade: string
     flags: 'orange' | 'red' | 'crisis' | 'none'
+    phone?: string | null
+    parents?: Array<{ id: number | string; name?: string | null; email?: string | null; phone?: string | null }>
+    recent_moods?: Array<{ id: number | string; date: string; mood?: string | null; sleep_hours?: number | null }>
   } | null>(student ? { id: student.id, name: student.name, grade: student.grade, flags: student.flags } : null)
   const [toast, setToast] = useState(false)
 
@@ -468,6 +510,9 @@ export function CounselorStudentDetail() {
           name: data.name || data.email || 'Student',
           grade: data.class_name || 'Class',
           flags: riskToFlag(data.risk_status),
+          phone: data.phone,
+          parents: data.parents ?? [],
+          recent_moods: data.recent_moods ?? [],
         })
         setPhq9(Array.from({ length: 9 }, () => 0))
         setGad7(Array.from({ length: 7 }, () => 0))
@@ -540,6 +585,8 @@ export function CounselorStudentDetail() {
   ]
 
   const display = studentData ?? student
+  const recentMoods =
+    display && 'recent_moods' in display ? display.recent_moods : undefined
 
   return (
     <Page emoji="🧑‍🎓" title={display?.name ?? 'Student'} subtitle="Questionnaires and follow-up planning.">
@@ -568,7 +615,57 @@ export function CounselorStudentDetail() {
         </CardBody>
       </Card>
 
-      <div className="mt-4 grid gap-4">
+      <div className="mt-4 grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+        <Card>
+          <CardHeader emoji="📞" title="Contact info" subtitle="For urgent follow-up if needed." />
+          <CardBody className="space-y-3">
+            <div className="rounded-2xl border border-white/70 bg-white/60 p-4">
+              <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Student phone</div>
+              <div className="mt-1 text-sm font-extrabold text-[rgb(var(--nefera-ink))]">
+                {display?.phone || 'Not available'}
+              </div>
+            </div>
+            {display?.parents?.length ? (
+              <div className="space-y-2">
+                {display.parents.map((p) => (
+                  <div key={p.id} className="rounded-2xl border border-white/70 bg-white/60 p-4">
+                    <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">Parent/Guardian</div>
+                    <div className="mt-1 text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{p.name || 'Parent'}</div>
+                    <div className="mt-1 text-xs text-[rgb(var(--nefera-muted))]">{p.email || 'No email'}</div>
+                    <div className="mt-1 text-sm font-semibold text-[rgb(var(--nefera-ink))]">{p.phone || 'No phone'}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-[rgb(var(--nefera-muted))]">
+                No parent contact linked yet.
+              </div>
+            )}
+          </CardBody>
+        </Card>
+        <Card>
+          <CardHeader emoji="📅" title="Recent moods" subtitle="Last 14 days (from check-ins)." />
+          <CardBody className="space-y-2">
+            {recentMoods?.length ? (
+              recentMoods.map((m) => (
+                <div key={m.id} className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/60 px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{m.mood || '—'}</div>
+                    <div className="text-xs text-[rgb(var(--nefera-muted))]">{new Date(m.date).toLocaleString()}</div>
+                  </div>
+                  <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">
+                    {typeof m.sleep_hours === 'number' ? `${m.sleep_hours}h sleep` : 'sleep —'}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-[rgb(var(--nefera-muted))]">
+                No check-ins yet.
+              </div>
+            )}
+          </CardBody>
+        </Card>
+        <div className="grid gap-4">
         <Card>
           <CardHeader emoji="📋" title="PHQ-9" subtitle={`Total: ${sum(phq9)}`} />
           <CardBody className="grid gap-3">
@@ -619,8 +716,9 @@ export function CounselorStudentDetail() {
           </CardBody>
         </Card>
 
-        <div className="hidden justify-end md:flex">
-          <Button onClick={onSave}>Save questionnaires</Button>
+          <div className="hidden justify-end md:flex">
+            <Button onClick={onSave}>Save questionnaires</Button>
+          </div>
         </div>
       </div>
 

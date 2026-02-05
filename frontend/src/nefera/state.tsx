@@ -9,6 +9,7 @@ export type User = {
   id: string
   name: string
   role: Role
+  email?: string
 }
 
 export type StudentCheckIn = {
@@ -72,6 +73,8 @@ export type StudentRecord = {
   grade: string
   flags: 'orange' | 'red' | 'crisis' | 'none'
   latestFeeling?: Feeling
+  phone?: string
+  parents?: Array<{ id: number | string; name?: string | null; email?: string | null; phone?: string | null }>
   phq9?: { answers: number[]; createdAt: string }
   gad7?: { answers: number[]; createdAt: string }
   cssrs?: { answers: boolean[]; createdAt: string }
@@ -121,8 +124,9 @@ export type NeferaState = {
 
 type Action =
   | { type: 'selectRole'; role: Role }
-  | { type: 'login'; name: string; role: Role }
+  | { type: 'login'; name: string; role: Role; id?: string; email?: string }
   | { type: 'logout' }
+  | { type: 'hydrate'; state: NeferaState; user?: User; selectedRole?: Role }
   | { type: 'student/setInbox'; inbox: Message[] }
   | { type: 'student/setAgeGroup'; ageGroup: AgeGroup }
   | { type: 'student/addCheckIn'; checkIn: StudentCheckIn }
@@ -149,7 +153,12 @@ type Action =
   | { type: 'principal/addBroadcast'; item: { id: string; createdAt: string; title: string; body: string } }
   | { type: 'principal/addReport'; report: IncidentReport }
 
-const STORAGE_KEY = 'nefera.v2'
+const STORAGE_PREFIX = 'nefera.v2'
+
+function storageKeyFor(user?: User) {
+  const key = user?.email || user?.id || user?.name || 'guest'
+  return `${STORAGE_PREFIX}:${key}:${user?.role ?? 'guest'}`
+}
 
 function isoDate(d: Date) {
   const year = d.getFullYear()
@@ -162,18 +171,23 @@ function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`
 }
 
-function loadState(): NeferaState | undefined {
+function loadState(key: string): NeferaState | undefined {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return undefined
-    return JSON.parse(raw) as NeferaState
+    const parsed = JSON.parse(raw) as Partial<NeferaState>
+    if (!parsed || typeof parsed !== 'object') return undefined
+    if (!parsed.student || !parsed.teacher || !parsed.parent || !parsed.counselor || !parsed.principal) {
+      return undefined
+    }
+    return parsed as NeferaState
   } catch {
     return undefined
   }
 }
 
-function saveState(state: NeferaState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+function saveState(key: string, state: NeferaState) {
+  localStorage.setItem(key, JSON.stringify(state))
 }
 
 export function getTodayISO() {
@@ -215,8 +229,6 @@ export function feelingEmoji(feeling: Feeling) {
 }
 
 function initialState(): NeferaState {
-  const today = getTodayISO()
-
   const studentRecords: StudentRecord[] = []
 
   return {
@@ -265,10 +277,20 @@ function reducer(state: NeferaState, action: Action): NeferaState {
     case 'selectRole':
       return { ...state, selectedRole: action.role }
     case 'login': {
-      return { ...state, user: { id: uid('user'), name: action.name.trim() || 'Guest', role: action.role } }
+      return {
+        ...state,
+        user: {
+          id: typeof action.id === 'string' ? action.id.trim() : action.id != null ? String(action.id) : uid('user'),
+          name: action.name.trim() || 'Guest',
+          role: action.role,
+          email: typeof action.email === 'string' ? action.email.trim() : action.email != null ? String(action.email) : undefined,
+        },
+      }
     }
     case 'logout':
       return { ...state, user: undefined }
+    case 'hydrate':
+      return { ...action.state, user: action.user ?? action.state.user, selectedRole: action.selectedRole ?? action.state.selectedRole }
     case 'student/setAgeGroup':
       return { ...state, student: { ...state.student, ageGroup: action.ageGroup } }
     case 'student/addCheckIn': {
@@ -424,8 +446,10 @@ type NeferaCtx = {
 const Ctx = createContext<NeferaCtx | undefined>(undefined)
 
 export function NeferaProvider({ children }: { children: React.ReactNode }) {
-  const loaded = useMemo(() => loadState(), [])
+  const loaded = useMemo(() => loadState(storageKeyFor(undefined)), [])
   const [state, dispatch] = useReducer(reducer, loaded ?? initialState())
+  const storageKey = useMemo(() => storageKeyFor(state.user), [state.user])
+  const lastHydratedKey = useRef<string | null>(null)
 
   const didHydrate = useRef(false)
   useEffect(() => {
@@ -433,8 +457,20 @@ export function NeferaProvider({ children }: { children: React.ReactNode }) {
       didHydrate.current = true
       return
     }
-    saveState(state)
-  }, [state])
+    saveState(storageKey, state)
+  }, [state, storageKey])
+
+  useEffect(() => {
+    if (!state.user) return
+    if (lastHydratedKey.current === storageKey) return
+    lastHydratedKey.current = storageKey
+    const next = loadState(storageKey)
+    if (next) {
+      dispatch({ type: 'hydrate', state: next, user: state.user, selectedRole: state.selectedRole })
+    } else {
+      dispatch({ type: 'hydrate', state: initialState(), user: state.user, selectedRole: state.selectedRole })
+    }
+  }, [state.user, state.selectedRole, storageKey])
 
   const value = useMemo(() => ({ state, dispatch }), [state])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
@@ -449,10 +485,11 @@ export function useNefera() {
 export function useAuth() {
   const { state, dispatch } = useNefera()
   const selectRole = (role: Role) => dispatch({ type: 'selectRole', role })
-  const login = (name: string, role: Role) => dispatch({ type: 'login', name, role })
+  const login = (name: string, role: Role, opts?: { id?: string; email?: string }) =>
+    dispatch({ type: 'login', name, role, id: opts?.id, email: opts?.email })
   const logout = () => {
     try {
-      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem(storageKeyFor(state.user))
     } catch {
       // ignore
     }

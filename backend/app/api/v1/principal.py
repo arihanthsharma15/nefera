@@ -71,6 +71,7 @@ def get_incident_reports_for_principal(
 
     result = []
     for r in reports:
+        student_user = r.student.user if r.student else None
         result.append(
             schemas.IncidentReportOut(
                 id=r.id,
@@ -78,6 +79,8 @@ def get_incident_reports_for_principal(
                 description=r.description,
                 status=r.status.value,
                 class_name=r.classroom.name if r.classroom else None,
+                student_name=student_user.full_name if student_user else None,
+                student_login_id=student_user.login_id if student_user else None,
                 created_at=r.created_at,
                 is_anonymous=(r.student_id is None),
             )

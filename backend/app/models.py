@@ -42,8 +42,11 @@ class User(Base):
     role = Column(Enum(UserRole))
     school_id = Column(Integer, ForeignKey("schools.id"))
     login_id = Column(String, unique=True, index=True, nullable=True)
+    class_id = Column(Integer, ForeignKey("classes.id"), nullable=True)
 
     full_name = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    secondary_phone = Column(String, nullable=True)
 
     student_profile = relationship("StudentProfile", back_populates="user", uselist=False)
     school = relationship("School", back_populates="users")

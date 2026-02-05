@@ -194,6 +194,28 @@ export async function getCounselorReports() {
   return res.json();
 }
 
+export async function sendCounselorBroadcast(content: string) {
+  const res = await fetch(`${API_BASE}/counselors/broadcast`, {
+    method: "POST",
+    headers: getAuthHeaders("counselor"),
+    body: JSON.stringify({ content }),
+  });
+
+  if (!res.ok) throw new Error("Counselor broadcast failed");
+  return res.json();
+}
+
+export async function updateCounselorReportStatus(reportId: string, status: "PENDING" | "REVIEWED" | "RESOLVED") {
+  const res = await fetch(`${API_BASE}/counselors/reports/${reportId}`, {
+    method: "PATCH",
+    headers: getAuthHeaders("counselor"),
+    body: JSON.stringify({ status }),
+  });
+
+  if (!res.ok) throw new Error("Report status update failed");
+  return res.json();
+}
+
 /* ------------------ TEACHER APIs ------------------ */
 export async function getTeacherDashboard(classId?: number) {
   const query = classId ? `?class_id=${classId}` : "";
@@ -215,6 +237,17 @@ export async function getTeacherStudents(classId?: number) {
   return res.json();
 }
 
+export async function sendTeacherBroadcast(content: string) {
+  const res = await fetch(`${API_BASE}/teachers/broadcast`, {
+    method: "POST",
+    headers: getAuthHeaders("teacher"),
+    body: JSON.stringify({ content }),
+  });
+
+  if (!res.ok) throw new Error("Teacher broadcast failed");
+  return res.json();
+}
+
 /* ------------------ PARENT APIs ------------------ */
 export async function getParentDashboard() {
   const res = await fetch(`${API_BASE}/parents/dashboard`, {
@@ -226,7 +259,17 @@ export async function getParentDashboard() {
 }
 
 /* ------------------ STUDENT APIs ------------------ */
-export async function submitCheckin(data: any) {
+type StudentCheckinPayload = {
+  mood: string;
+  sleep_hours: number;
+  journal_text: string;
+  triggers: string[];
+  checkin_data: Record<string, string>;
+};
+
+type StudentAssessmentPayload = Record<string, unknown>;
+
+export async function submitCheckin(data: StudentCheckinPayload) {
   const res = await fetch(`${API_BASE}/students/checkin`, {
     method: "POST",
     headers: getAuthHeaders("student"),
@@ -237,7 +280,7 @@ export async function submitCheckin(data: any) {
   return res.json();
 }
 
-export async function submitAssessment(data: any) {
+export async function submitAssessment(data: StudentAssessmentPayload) {
   const res = await fetch(`${API_BASE}/students/assessment`, {
     method: "POST",
     headers: getAuthHeaders("student"),
@@ -245,6 +288,40 @@ export async function submitAssessment(data: any) {
   });
 
   if (!res.ok) throw new Error("Assessment submit failed");
+  return res.json();
+}
+
+export async function submitJournal(payload: {
+  title?: string;
+  content: string;
+  mood?: string;
+  triggers?: string[];
+}) {
+  const res = await fetch(`${API_BASE}/students/journal`, {
+    method: "POST",
+    headers: getAuthHeaders("student"),
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) throw new Error("Journal submit failed");
+  return res.json();
+}
+
+export async function submitCounselorAssessment(data: {
+  student_id: number | string;
+  type: "PHQ9" | "GAD7" | "CSSRS";
+  answers: number[];
+}) {
+  const res = await fetch(`${API_BASE}/counselors/assessments`, {
+    method: "POST",
+    headers: getAuthHeaders("counselor"),
+    body: JSON.stringify({
+      ...data,
+      student_id: Number(data.student_id),
+    }),
+  });
+
+  if (!res.ok) throw new Error("Counselor assessment submit failed");
   return res.json();
 }
 

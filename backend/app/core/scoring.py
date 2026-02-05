@@ -3,6 +3,9 @@ from app import models  # ✅ Models yahan se import ho rahe hain
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 from app.models import SafetyEvent, DailyJournal, StudentProfile
+import os
+import smtplib
+from email.message import EmailMessage
 
 
 # ---------- Journal keyword lists (MVP) ----------
@@ -10,6 +13,12 @@ from app.models import SafetyEvent, DailyJournal, StudentProfile
 SEVERE_PHRASES: List[str] = [
     "i don't want to live",
     "don't want to live",
+    "i don't wanna live",
+    "dont wanna live",
+    "i don't wanna live anymore",
+    "dont wanna live anymore",
+    "i don't want to live anymore",
+    "dont want to live anymore",
     "i want to die",
     "want to die",
     "better off dead",
@@ -95,6 +104,14 @@ def analyze_journal_text(journal_text: str | None) -> Dict[str, Any]:
         return flags
 
     text = journal_text.lower()
+    # Normalize smart quotes/apostrophes to plain ASCII
+    text = (
+        text.replace("’", "'")
+            .replace("‘", "'")
+            .replace("`", "'")
+            .replace("“", '"')
+            .replace("”", '"')
+    )
 
     # Severe phrases
     for phrase in SEVERE_PHRASES:
@@ -190,7 +207,81 @@ def create_safety_event(
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    _send_crisis_email_if_configured(db, event)
     return event
+
+
+def _send_crisis_email_if_configured(db: Session, event: SafetyEvent) -> None:
+    """
+    Best-effort pilot email alert for SafetyEvent triggers.
+    No-op unless CRISIS_EMAIL_ENABLED=true and SMTP settings are present.
+    """
+
+    enabled = os.getenv("CRISIS_EMAIL_ENABLED", "false").lower() in ("1", "true", "yes")
+    if not enabled:
+        return
+
+    # Throttle: avoid spamming duplicates for same student + same trigger within window
+    throttle_minutes = int(os.getenv("CRISIS_EMAIL_THROTTLE_MINUTES", "5"))
+    cutoff = datetime.utcnow() - timedelta(minutes=throttle_minutes)
+    recent = (
+        db.query(models.SafetyEvent)
+        .filter(
+            models.SafetyEvent.student_id == event.student_id,
+            models.SafetyEvent.risk_band == event.risk_band,
+            models.SafetyEvent.trigger_type == event.trigger_type,
+            models.SafetyEvent.created_at >= cutoff,
+            models.SafetyEvent.id != event.id,
+        )
+        .order_by(models.SafetyEvent.created_at.desc())
+        .first()
+    )
+    if recent:
+        return
+
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
+    mail_from = os.getenv("CRISIS_EMAIL_FROM")
+    mail_to = os.getenv("CRISIS_EMAIL_TO")
+
+    if not (smtp_host and smtp_user and smtp_pass and mail_from and mail_to):
+        return
+
+    student = (
+        db.query(models.StudentProfile)
+        .filter(models.StudentProfile.id == event.student_id)
+        .first()
+    )
+    user = student.user if student else None
+
+    subject = f"[Nefera] CRISIS alert for student {event.student_id}"
+    body = (
+        f"A CRISIS safety event was created.\n\n"
+        f"Student ID: {event.student_id}\n"
+        f"Student Name: {user.full_name if user and user.full_name else (user.email if user else 'Unknown')}\n"
+        f"Trigger: {event.trigger_type}\n"
+        f"Risk Band: {event.risk_band}\n"
+        f"Created At: {event.created_at}\n"
+        f"Details: {event.details}\n"
+    )
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = mail_from
+    msg["To"] = mail_to
+    msg.set_content(body)
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+    except Exception:
+        # Best-effort only; avoid breaking core flow on email failure.
+        pass
 
 
 

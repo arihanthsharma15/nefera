@@ -64,6 +64,7 @@ def main():
             school_id=school.id,
             full_name="Demo Principal",
             login_id="PR-001",
+            phone_number="9000000001",
         )
         db.add(principal_user)
         db.commit()
@@ -90,6 +91,7 @@ def main():
             school_id=school.id,
             full_name="School Counselor",
             login_id="CO-001",
+            phone_number="9000000002",
         )
         db.add(counselor_user)
         db.commit()
@@ -116,6 +118,8 @@ def main():
             school_id=school.id,
             full_name="Demo Teacher",
             login_id="TE-001",
+            phone_number="9000000003",
+            class_id=classroom_a.id,
         )
         db.add(teacher_user)
         db.commit()
@@ -126,6 +130,8 @@ def main():
             teacher_user.full_name = "Demo Teacher"
         if not teacher_user.login_id:
             teacher_user.login_id = "TE-001"
+        if not teacher_user.class_id:
+            teacher_user.class_id = classroom_a.id
         db.commit()
 
     # ---------------------------
@@ -142,6 +148,7 @@ def main():
             school_id=school.id,
             full_name="Demo Parent",
             login_id="PA-001",
+            phone_number="9000001001",
         )
         db.add(parent_user)
         db.commit()
@@ -152,6 +159,8 @@ def main():
             parent_user.full_name = "Demo Parent"
         if not parent_user.login_id:
             parent_user.login_id = "PA-001"
+        if not parent_user.phone_number:
+            parent_user.phone_number = "9000001001"
         db.commit()
 
     # ---------------------------
@@ -168,6 +177,7 @@ def main():
             school_id=school.id,
             full_name="Demo Parent 2",
             login_id="PA-002",
+            phone_number="9000001002",
         )
         db.add(parent2_user)
         db.commit()
@@ -178,6 +188,8 @@ def main():
             parent2_user.full_name = "Demo Parent 2"
         if not parent2_user.login_id:
             parent2_user.login_id = "PA-002"
+        if not parent2_user.phone_number:
+            parent2_user.phone_number = "9000001002"
         db.commit()
 
     # ---------------------------
@@ -194,6 +206,7 @@ def main():
             school_id=school.id,
             full_name="Demo Student",
             login_id="ST-001",
+            phone_number="9000002001",
         )
         db.add(student_user)
         db.commit()
@@ -204,6 +217,8 @@ def main():
             student_user.full_name = "Demo Student"
         if not student_user.login_id:
             student_user.login_id = "ST-001"
+        if not student_user.phone_number:
+            student_user.phone_number = "9000002001"
         db.commit()
 
     # ---------------------------
@@ -233,6 +248,7 @@ def main():
             school_id=school.id,
             full_name="Demo Student 2",
             login_id="ST-002",
+            phone_number="9000002002",
         )
         db.add(student2_user)
         db.commit()
@@ -243,6 +259,8 @@ def main():
             student2_user.full_name = "Demo Student 2"
         if not student2_user.login_id:
             student2_user.login_id = "ST-002"
+        if not student2_user.phone_number:
+            student2_user.phone_number = "9000002002"
         db.commit()
 
     profile2 = db.query(models.StudentProfile).filter_by(user_id=student2_user.id).first()

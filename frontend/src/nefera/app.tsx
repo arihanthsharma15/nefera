@@ -7,6 +7,7 @@ import {
   getStudentInbox,
   getStudentJournals,
   submitIncidentReport,
+  submitJournal,
   getPrincipalDashboard,
   getPrincipalReports,
   sendPrincipalBroadcast,
@@ -14,8 +15,12 @@ import {
   getCounselorClasses,
   getCounselorStudents,
   getCounselorRiskyStudents,
+  getCounselorReports,
+  updateCounselorReportStatus,
+  sendCounselorBroadcast,
   getTeacherDashboard,
   getTeacherStudents,
+  sendTeacherBroadcast,
   getParentDashboard,
 } from "../api";
 import { supabase } from "../lib/supabase";
@@ -78,6 +83,43 @@ const roles: Array<{ role: Role; label: string; emoji: string; blurb: string }> 
 
 type NavItem = { to: string; label: string; emoji: string }
 
+type StudentJournalItem = {
+  id?: string | number
+  date: string
+  mood?: string | null
+  triggers?: string[] | null
+  journal_text?: string | null
+}
+
+type StudentInboxRow = {
+  id: string | number
+  created_at: string
+  sender_role?: string | null
+  content: string
+}
+
+type CounselorRiskRow = {
+  id: string | number
+  name?: string | null
+  email?: string | null
+  class_name?: string | null
+  risk_status?: string | null
+}
+
+type ReportItem = {
+  id: string | number
+  incident_type?: string | null
+  type?: string | null
+  status?: string | null
+  created_at?: string | null
+  createdAt?: string | null
+  description?: string | null
+  is_anonymous?: boolean | null
+  class_name?: string | null
+  student_name?: string | null
+  student_login_id?: string | null
+}
+
 function navForRole(role: Role): NavItem[] {
   switch (role) {
     case 'student':
@@ -106,6 +148,7 @@ function navForRole(role: Role): NavItem[] {
       return [
         { to: '/counselor/dashboard', label: 'Home', emoji: '🏡' },
         { to: '/counselor/flags', label: 'Flags', emoji: '🚩' },
+        { to: '/counselor/reports', label: 'Reports', emoji: '🧾' },
         { to: '/counselor/broadcast', label: 'Broadcast', emoji: '📣' },
         { to: '/counselor/profile', label: 'Profile', emoji: '🙋' },
       ]
@@ -500,11 +543,11 @@ function LoginPage() {
 
                     const roleName = finalRole[0].toUpperCase() + finalRole.slice(1);
                     const displayName = name || backendUser?.name || roleName;
-                    login(displayName, finalRole);
+                    login(displayName, finalRole, { id: backendUser?.id, email: backendUser?.email });
 
                     const from = search.get("from");
                     navigate(from || roleHome(finalRole), { replace: true });
-                  } catch (e) {
+                  } catch {
                     alert("Login failed");
                   }
                 }}
@@ -566,8 +609,7 @@ function RoleEntry() {
 
 function StudentDashboard() {
   const { user } = useAuth()
-  const { state } = useNefera()
-  const [journals, setJournals] = useState<any[]>([])
+  const [journals, setJournals] = useState<StudentJournalItem[]>([])
   const feelingHint = useFirstVisitHint('nefera_hint_feeling_checkin_v1')
 
   useEffect(() => {
@@ -1038,22 +1080,18 @@ function streakFromISODateList(isoDates: string[]) {
 }
 
 function StudentJournalWrite() {
-  const { state, dispatch } = useNefera()
   const [search] = useSearchParams()
   const navigate = useNavigate()
-  const todayKey = new Date().toISOString().split('T')[0]
-  const todaysEntry = state.student.journal.find((j) => j.dateKey === todayKey)
-  const isEdit = Boolean(todaysEntry)
-  const [now] = useState(() => Date.now())
+  const isEdit = false
 
-  const [title, setTitle] = useState(todaysEntry?.title ?? search.get('title') ?? '')
-  const [content, setContent] = useState(todaysEntry?.content ?? '')
+  const [title, setTitle] = useState(search.get('title') ?? '')
+  const [content, setContent] = useState('')
   const [showReflection, setShowReflection] = useState(false)
   const [feeling, setFeeling] = useState<Feeling | ''>(((search.get('feeling') as Feeling | null) ?? '') as Feeling | '')
   const [toast, setToast] = useState<{ open: boolean; message: string; tone?: 'ok' | 'warn' }>({ open: false, message: '' })
 
-  const locked = Boolean(todaysEntry && now - todaysEntry.createdAt > 24 * 60 * 60 * 1000)
-  const canSave = !locked && !!title.trim() && !!content.trim()
+  const locked = false
+  const canSave = !locked && !!content.trim()
 
   const promptCards = useMemo(() => {
     const base = [
@@ -1095,22 +1133,17 @@ function StudentJournalWrite() {
     return [first, ...base]
   }, [feeling])
 
-  function onSave() {
-    const now = Date.now()
-    if (todaysEntry) {
-      if (now - todaysEntry.createdAt > 24 * 60 * 60 * 1000) {
-        setToast({ open: true, message: 'This entry is locked after 24 hours.', tone: 'warn' })
-        return
-      }
-      dispatch({
-        type: 'student/updateJournal',
-        payload: { id: todaysEntry.id, title: title.trim(), content: content.trim(), updatedAt: now },
+  async function onSave() {
+    const safeTitle = title.trim() || 'Journal'
+    try {
+      await submitJournal({
+        title: safeTitle,
+        content: content.trim(),
+        mood: feeling ? feeling.toUpperCase() : undefined,
       })
-    } else {
-      dispatch({
-        type: 'student/addJournal',
-        payload: { id: makeId('jrnl'), title: title.trim(), content: content.trim(), createdAt: now, dateKey: todayKey },
-      })
+    } catch {
+      setToast({ open: true, message: 'Save failed. Please try again.', tone: 'warn' })
+      return
     }
     setToast({ open: true, message: isEdit ? 'Updated. You took care of your story.' : 'Saved. You showed up for yourself.' })
     setShowReflection(true)
@@ -1263,7 +1296,7 @@ function StudentJournalWrite() {
 }
 
 function StudentJournalPast() {
-  const [journals, setJournals] = useState<any[]>([])
+  const [journals, setJournals] = useState<StudentJournalItem[]>([])
 
   useEffect(() => {
     getStudentJournals(60)
@@ -1308,7 +1341,6 @@ function StudentJournalPast() {
 }
 
 function StudentGratitude() {
-  const { state, dispatch } = useNefera()
   const navigate = useNavigate()
   const [items, setItems] = useState(Array.from({ length: 5 }, () => ''))
   const [toast, setToast] = useState(false)
@@ -1320,25 +1352,9 @@ function StudentGratitude() {
       .filter((x) => x.trim())
       .map((x) => `• ${x.trim()}`)
       .join('\n')
-    const todayKey = new Date().toISOString().split('T')[0]
-    const todaysEntry = state.student.journal.find((j) => j.dateKey === todayKey)
-    const now = Date.now()
-    const nextTitle = todaysEntry?.title || 'Gratitude'
-    const nextContent = todaysEntry?.content
-      ? `${todaysEntry.content.trimEnd()}\n\nGratitude\n${content}`
-      : `Gratitude\n${content}`
-
-    if (todaysEntry) {
-      dispatch({
-        type: 'student/updateJournal',
-        payload: { id: todaysEntry.id, title: nextTitle, content: nextContent, updatedAt: now },
-      })
-    } else {
-      dispatch({
-        type: 'student/addJournal',
-        payload: { id: makeId('jrnl'), title: nextTitle, content: nextContent, createdAt: now, dateKey: todayKey },
-      })
-    }
+    const nextTitle = 'Gratitude'
+    const nextContent = `Gratitude\n${content}`
+    submitJournal({ title: nextTitle, content: nextContent }).catch(() => null)
     setToast(true)
   }
 
@@ -1637,7 +1653,7 @@ function StudentAICompanion() {
     <Page
       emoji="🤖"
       title="AI Companion"
-      subtitle="A private, guided chat with supportive prompts to help you reflect."
+      subtitle="Pilot preview: guided prompts for reflection (not a clinical tool)."
     >
       <Card className="overflow-hidden">
         <div className="max-h-[56vh] overflow-auto p-5">
@@ -1685,7 +1701,7 @@ function StudentAICompanion() {
 function StudentGroups() {
   const { state, dispatch } = useNefera()
   return (
-    <Page emoji="🤝" title="Support groups" subtitle="Join a circle. Leave anytime. No judgement.">
+    <Page emoji="🤝" title="Support groups" subtitle="Pilot preview: join a circle. Leave anytime. No judgement.">
       <div className="grid gap-3 md:grid-cols-2">
         {state.student.groups.map((g) => (
           <Card key={g.id} className="transition hover:bg-black/5">
@@ -1715,7 +1731,7 @@ function StudentInbox() {
   useEffect(() => {
     getStudentInbox()
       .then((items) => {
-        const inbox = (items ?? []).map((m: any) => {
+        const inbox = (items ?? []).map((m: StudentInboxRow) => {
           const role = String(m.sender_role || "school").toLowerCase()
           const fromName = role[0]?.toUpperCase() + role.slice(1)
           return {
@@ -2089,7 +2105,7 @@ function ParentObservationChecklist() {
 
 function StudentProfile() {
   const { user } = useAuth()
-  const [journals, setJournals] = useState<any[]>([])
+  const [journals, setJournals] = useState<StudentJournalItem[]>([])
 
   useEffect(() => {
     getStudentJournals(90)
@@ -2178,12 +2194,20 @@ function riskToFlag(risk?: string): 'orange' | 'red' | 'crisis' | 'none' {
 }
 
 type TeacherStudentItem = {
-  id: number
+  id: number | string
   name: string
   roll_number?: string | null
   class_name?: string | null
   risk_status?: string | null
   flags: 'orange' | 'red' | 'crisis' | 'none'
+}
+
+type TeacherStudentRow = {
+  id: number | string
+  name: string
+  roll_number?: string | null
+  class_name?: string | null
+  risk_status?: string | null
 }
 
 function TeacherDashboard() {
@@ -2200,9 +2224,13 @@ function TeacherDashboard() {
   useEffect(() => {
     getTeacherStudents()
       .then((data) => {
-        const list = (data?.students ?? []).map((s: any) => ({
-          ...s,
-          flags: riskToFlag(s?.risk_status),
+        const list = (data?.students ?? []).map((s: TeacherStudentRow) => ({
+          id: s.id,
+          name: s.name,
+          roll_number: s.roll_number ?? null,
+          class_name: s.class_name ?? null,
+          risk_status: s.risk_status ?? null,
+          flags: riskToFlag(s.risk_status ?? undefined),
         }))
         setStudents(list)
       })
@@ -2281,11 +2309,17 @@ function TeacherBroadcast() {
 
   const canSend = !!title.trim() && !!body.trim()
 
-  function onSend() {
+  async function onSend() {
     const createdAt = new Date().toISOString()
-    dispatch({ type: 'teacher/addBroadcast', item: { id: makeId('t_brd'), createdAt, title: title.trim(), body: body.trim() } })
-    setToast(true)
-    window.setTimeout(() => navigate('/teacher/dashboard', { replace: true }), 250)
+    const content = `${title.trim()}\n\n${body.trim()}`
+    try {
+      await sendTeacherBroadcast(content)
+      dispatch({ type: 'teacher/addBroadcast', item: { id: makeId('t_brd'), createdAt, title: title.trim(), body: body.trim() } })
+      setToast(true)
+      window.setTimeout(() => navigate('/teacher/dashboard', { replace: true }), 250)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   return (
@@ -2330,9 +2364,13 @@ function TeacherStudents() {
   useEffect(() => {
     getTeacherStudents()
       .then((data) => {
-        const list = (data?.students ?? []).map((s: any) => ({
-          ...s,
-          flags: riskToFlag(s?.risk_status),
+        const list = (data?.students ?? []).map((s: TeacherStudentRow) => ({
+          id: s.id,
+          name: s.name,
+          roll_number: s.roll_number ?? null,
+          class_name: s.class_name ?? null,
+          risk_status: s.risk_status ?? null,
+          flags: riskToFlag(s.risk_status ?? undefined),
         }))
         setStudents(list)
       })
@@ -2405,6 +2443,7 @@ function ParentDashboard() {
     class_name?: string
     risk_status?: string
     streak_count?: number
+    risk_status_note?: string
   } | null>(null)
 
   useEffect(() => {
@@ -2420,6 +2459,11 @@ function ParentDashboard() {
           <CardBody className="space-y-2">
             <div className="text-base font-extrabold tracking-tight text-[rgb(var(--nefera-ink))]">{snapshot?.student_name ?? child?.name ?? '—'}</div>
             <div className="text-sm font-semibold text-[rgb(var(--nefera-muted))]">{snapshot?.class_name ?? child?.grade ?? ''}</div>
+            {snapshot?.risk_status === 'CONTACT_SCHOOL' && snapshot?.risk_status_note ? (
+              <div className="mt-2 rounded-2xl border border-white/70 bg-white/60 p-3 text-xs font-semibold text-[rgb(var(--nefera-muted))]">
+                {snapshot.risk_status_note}
+              </div>
+            ) : null}
           </CardBody>
         </Card>
         <Card>
@@ -2437,22 +2481,6 @@ function ParentDashboard() {
           </CardBody>
         </Card>
       </div>
-      <Card className="mt-4">
-        <CardHeader emoji="📨" title="Recent messages" subtitle="Messages you’ve sent to school." />
-        <CardBody className="grid gap-2">
-          {state.parent.sent.slice(0, 4).map((m) => (
-            <div key={m.id} className="rounded-2xl border border-white/70 bg-white/60 p-4 shadow-lg shadow-black/5">
-              <div className="text-xs font-semibold text-[rgb(var(--nefera-muted))]">{formatShort(m.createdAt)}</div>
-              <div className="mt-1 text-sm text-[rgb(var(--nefera-ink))] whitespace-pre-wrap">{m.body}</div>
-            </div>
-          ))}
-          {state.parent.sent.length === 0 ? (
-            <div className="rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-[rgb(var(--nefera-muted))]">
-              No messages yet. If you notice changes at home, a short note can help the school respond early.
-            </div>
-          ) : null}
-        </CardBody>
-      </Card>
     </Page>
   )
 }
@@ -2720,7 +2748,7 @@ function CounselorFlags() {
   useEffect(() => {
     getCounselorRiskyStudents()
       .then((rows) => {
-        const mapped = (rows ?? []).map((s: any) => {
+        const mapped = (rows ?? []).map((s: CounselorRiskRow) => {
           const status = String(s.risk_status || "ORANGE").toLowerCase()
           const flag =
             status === "crisis" ? "crisis" :
@@ -2785,12 +2813,11 @@ function CounselorStudents() {
 
   useEffect(() => {
     if (classId == null) {
-      setStudents([])
       return
     }
     getCounselorStudents(classId)
       .then((rows) => {
-        const mapped = (rows ?? []).map((s: any) => {
+        const mapped = (rows ?? []).map((s: CounselorRiskRow) => {
           const status = String(s.risk_status || "GREEN").toLowerCase()
           const flag =
             status === "crisis" ? "crisis" :
@@ -2902,11 +2929,17 @@ function CounselorBroadcast() {
   const [toast, setToast] = useState(false)
   const canSend = !!title.trim() && !!body.trim()
 
-  function onSend() {
+  async function onSend() {
     const createdAt = new Date().toISOString()
-    dispatch({ type: 'counselor/addBroadcast', item: { id: makeId('c_brd'), createdAt, title: title.trim(), body: body.trim() } })
-    setToast(true)
-    window.setTimeout(() => navigate('/counselor/dashboard', { replace: true }), 250)
+    const content = `${title.trim()}\n\n${body.trim()}`
+    try {
+      await sendCounselorBroadcast(content)
+      dispatch({ type: 'counselor/addBroadcast', item: { id: makeId('c_brd'), createdAt, title: title.trim(), body: body.trim() } })
+      setToast(true)
+      window.setTimeout(() => navigate('/counselor/dashboard', { replace: true }), 250)
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   return (
@@ -2945,6 +2978,83 @@ function CounselorBroadcast() {
   )
 }
 
+function CounselorReports() {
+  const [reports, setReports] = useState<ReportItem[]>([])
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ open: boolean; message: string }>({ open: false, message: '' })
+
+  const normalizeReportStatus = (status?: string | null) => {
+    const value = String(status || '').toUpperCase()
+    return value === 'REVIEWED' || value === 'RESOLVED' ? value : 'PENDING'
+  }
+
+  useEffect(() => {
+    getCounselorReports()
+      .then(setReports)
+      .catch(console.error)
+  }, [])
+
+  async function onUpdateStatus(id: string, status: "PENDING" | "REVIEWED" | "RESOLVED") {
+    setSavingId(id)
+    try {
+      const updated = await updateCounselorReportStatus(id, status)
+      setReports((prev) => prev.map((r) => (r.id === id ? updated : r)))
+      setToast({ open: true, message: 'Status updated.' })
+    } catch {
+      setToast({ open: true, message: 'Update failed.' })
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  return (
+    <Page emoji="🧾" title="Reports" subtitle="Safety and wellbeing reports.">
+      <div className="grid gap-3">
+        {reports.map((r) => (
+          <Card key={r.id}>
+            <CardBody className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{r.incident_type}</div>
+                  <div className="mt-1 text-xs font-semibold text-[rgb(var(--nefera-muted))]">
+                    {r.created_at ? formatShort(r.created_at) : '—'}
+                  </div>
+                </div>
+                <Badge>{r.status}</Badge>
+              </div>
+              <div className="text-sm text-[rgb(var(--nefera-muted))] whitespace-pre-wrap">{r.description}</div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-[rgb(var(--nefera-muted))]">
+                <span>Anonymous: {r.is_anonymous ? 'Yes' : 'No'}</span>
+                {r.class_name ? <span>Class: {r.class_name}</span> : null}
+                {!r.is_anonymous && r.student_name ? <span>Student: {r.student_name}</span> : null}
+                {!r.is_anonymous && r.student_login_id ? <span>Login ID: {r.student_login_id}</span> : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={normalizeReportStatus(r.status)}
+                  onChange={(v) => onUpdateStatus(String(r.id), v as "PENDING" | "REVIEWED" | "RESOLVED")}
+                  options={[
+                    { value: 'PENDING', label: 'Pending' },
+                    { value: 'REVIEWED', label: 'Reviewed' },
+                    { value: 'RESOLVED', label: 'Resolved' },
+                  ]}
+                />
+                {savingId === r.id ? <Badge>Saving…</Badge> : null}
+              </div>
+            </CardBody>
+          </Card>
+        ))}
+        {reports.length === 0 ? (
+          <Card>
+            <CardHeader emoji="📝" title="No reports yet" subtitle="New reports will show up here." />
+          </Card>
+        ) : null}
+      </div>
+      <Toast open={toast.open} message={toast.message} onClose={() => setToast({ open: false, message: '' })} />
+    </Page>
+  )
+}
+
 function CounselorProfile() {
   const { user } = useAuth()
   return (
@@ -2965,7 +3075,7 @@ function CounselorProfile() {
 function PrincipalDashboard() {
   const { state } = useNefera()
   const { user } = useAuth()
-  const [reports, setReports] = useState<any[]>([])
+  const [reports, setReports] = useState<ReportItem[]>([])
   const [riskZones, setRiskZones] = useState<{ green: number; orange: number; red: number; crisis: number } | null>(null)
 
   useEffect(() => {
@@ -2981,6 +3091,8 @@ function PrincipalDashboard() {
   const safeReports = reports.length ? reports : fallbackReports
   const fallbackFlagged = state.teacher.students.filter((s) => s.flags !== 'none').length
   const flagged = riskZones ? (riskZones.orange + riskZones.red + riskZones.crisis) : fallbackFlagged
+  const resolvedCount = safeReports.filter((r) => String(r.status || '').toUpperCase() === 'RESOLVED').length
+  const inReviewCount = safeReports.length - resolvedCount
 
   return (
     <Page emoji="🏫" title={`Welcome, ${user?.name ?? 'Principal'}`} subtitle="School-wide insight and reporting.">
@@ -2990,8 +3102,8 @@ function PrincipalDashboard() {
           <CardBody className="grid gap-3 md:grid-cols-2">
             <StatPill emoji="🚩" label="Flagged" value={`${flagged}`} />
             <StatPill emoji="🛡️" label="Reports" value={`${safeReports.length}`} />
-            <StatPill emoji="🟢" label="Resolved" value={`${safeReports.filter((r) => r.status === 'resolved').length}`} />
-            <StatPill emoji="🟡" label="In review" value={`${safeReports.filter((r) => r.status !== 'resolved').length}`} />
+            <StatPill emoji="🟢" label="Resolved" value={`${resolvedCount}`} />
+            <StatPill emoji="🟡" label="In review" value={`${inReviewCount}`} />
           </CardBody>
         </Card>
         <Card>
@@ -3010,16 +3122,33 @@ function PrincipalDashboard() {
       <Card className="mt-4">
         <CardHeader emoji="🛡️" title="Latest reports" subtitle="Newest items first." />
         <CardBody className="grid gap-2">
-          {safeReports.slice(0, 6).map((r) => (
-            <div key={r.id} className="rounded-2xl border border-white/70 bg-white/60 p-4 shadow-lg shadow-black/5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{r.type ?? r.incident_type}</div>
-                <Badge tone={r.status === 'resolved' ? 'ok' : r.status === 'reviewing' ? 'warn' : 'neutral'}>{r.status}</Badge>
+          {safeReports.slice(0, 6).map((r) => {
+            const title = 'incident_type' in r ? r.incident_type : r.type
+            const reportDate = 'created_at' in r ? r.created_at : r.createdAt
+            const statusLabel = String(r.status || '').toUpperCase()
+            return (
+              <div key={r.id} className="rounded-2xl border border-white/70 bg-white/60 p-4 shadow-lg shadow-black/5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-extrabold text-[rgb(var(--nefera-ink))]">{title}</div>
+                  <Badge
+                    tone={
+                      statusLabel === 'RESOLVED'
+                        ? 'ok'
+                        : statusLabel === 'REVIEWED'
+                          ? 'warn'
+                          : 'neutral'
+                    }
+                  >
+                    {statusLabel}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-xs font-semibold text-[rgb(var(--nefera-muted))]">
+                  {reportDate ? formatShort(reportDate) : '—'}
+                </div>
+                <div className="mt-2 text-sm text-[rgb(var(--nefera-muted))] whitespace-pre-wrap">{r.description}</div>
               </div>
-              <div className="mt-1 text-xs font-semibold text-[rgb(var(--nefera-muted))]">{formatShort(r.createdAt ?? r.created_at)}</div>
-              <div className="mt-2 text-sm text-[rgb(var(--nefera-muted))] whitespace-pre-wrap">{r.description}</div>
-            </div>
-          ))}
+            )
+          })}
           {safeReports.length === 0 ? (
             <div className="rounded-2xl border border-white/70 bg-white/60 p-4 text-sm text-[rgb(var(--nefera-muted))]">
               No reports yet.
@@ -3186,6 +3315,7 @@ export function NeferaRoutes() {
         <Route path="/counselor" element={<RequireAuth role="counselor"><Navigate to="/counselor/dashboard" replace /></RequireAuth>} />
         <Route path="/counselor/dashboard" element={<RequireAuth role="counselor"><CounselorDashboard /></RequireAuth>} />
         <Route path="/counselor/flags" element={<RequireAuth role="counselor"><CounselorFlags /></RequireAuth>} />
+        <Route path="/counselor/reports" element={<RequireAuth role="counselor"><CounselorReports /></RequireAuth>} />
         <Route path="/counselor/students" element={<RequireAuth role="counselor"><CounselorStudents /></RequireAuth>} />
         <Route path="/counselor/students/:id" element={<RequireAuth role="counselor"><LazyBoundary><LazyCounselorStudentDetail /></LazyBoundary></RequireAuth>} />
         <Route path="/counselor/assessments/phq9" element={<RequireAuth role="counselor"><LazyBoundary><LazyCounselorAssessmentPhq9 /></LazyBoundary></RequireAuth>} />

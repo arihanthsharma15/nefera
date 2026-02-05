@@ -115,7 +115,17 @@ def create_daily_checkin(
     # 2. Journal text analyze + encrypt
 
     # 🔍 2a) Keyword-based risk analysis on plaintext
-    analysis = analyze_journal_text(checkin.journal_text)
+    # Combine journal_text + check-in answers (q0/q1/q2 etc.)
+    combined_parts = []
+    if checkin.journal_text:
+        combined_parts.append(checkin.journal_text)
+    if isinstance(checkin_data, dict):
+        for v in checkin_data.values():
+            if v is None:
+                continue
+            combined_parts.append(str(v))
+    combined_text = "\n".join(combined_parts) if combined_parts else None
+    analysis = analyze_journal_text(combined_text)
 
     # 🔐 2b) Encrypt journal text before saving to DB
     encrypted_journal = encrypt_text(checkin.journal_text)
@@ -192,6 +202,80 @@ def create_daily_checkin(
     return schemas.CheckinResponse(message=message, coping_tool=tool)
 
 
+@router.post("/journal", response_model=schemas.JournalResponse)
+def submit_journal_entry(
+    entry: schemas.JournalCreate,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_role("STUDENT")),
+):
+    """
+    Save a journal entry to the backend (so safety keywords can be detected).
+    """
+    profile = _get_current_student_profile(db, payload)
+
+    checkin_data = {
+        "title": entry.title,
+        "notes": entry.content,
+        "source": "journal",
+    }
+    if entry.triggers:
+        checkin_data["triggers"] = entry.triggers
+
+    combined_parts = [entry.content]
+    if entry.title:
+        combined_parts.append(entry.title)
+    combined_text = "\n".join([p for p in combined_parts if p])
+
+    analysis = analyze_journal_text(combined_text)
+    encrypted_journal = encrypt_text(entry.content)
+
+    mood = (entry.mood or "").upper() if entry.mood else None
+    record = models.DailyJournal(
+        student_id=profile.id,
+        mood=mood,
+        sleep_hours=0,
+        checkin_data=checkin_data,
+        journal_text=encrypted_journal,
+        has_anxiety_terms=analysis["has_anxiety_terms"],
+        has_low_mood_terms=analysis["has_low_mood_terms"],
+        has_self_worth_terms=analysis["has_self_worth_terms"],
+        has_severe_suicidal_terms=analysis["has_severe_suicidal_terms"],
+        trigger_tags=entry.triggers or None,
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+
+    if analysis["has_severe_suicidal_terms"]:
+        create_safety_event(
+            db=db,
+            student_id=profile.id,
+            trigger_type="JOURNAL_SEVERE",
+            risk_band="CRISIS",
+            details={
+                "matches": analysis["matches"],
+                "mood": mood,
+                "source": "journal",
+            },
+        )
+        profile.risk_status = "CRISIS"
+        db.commit()
+
+    update_student_risk_profile(db, profile.id)
+
+    message = "Saved your journal."
+    tool = None
+    if analysis["has_severe_suicidal_terms"]:
+        message = (
+            "Thank you for sharing such big and heavy feelings. "
+            "You are not alone and you deserve support. "
+            "If you can, talk to a trusted grown-up."
+        )
+        tool = "Try this: hand on heart, 3 slow breaths, think of one safe person."
+
+    return schemas.JournalResponse(message=message, coping_tool=tool)
+
+
 @router.post("/assessment", response_model=schemas.AssessmentResponse)
 def submit_assessment(
     assessment: schemas.AssessmentCreate,
@@ -251,6 +335,33 @@ def submit_assessment(
             details={
                 "answers": assessment.answers,
                 "type": "CSSRS",
+            },
+        )
+
+    # 🔴 PHQ-9 RED (non-Q9) -> safety event
+    if assessment.type == "PHQ9" and (not is_alert) and risk_level in ["RED"]:
+        create_safety_event(
+            db=db,
+            student_id=profile.id,
+            trigger_type="PHQ9",
+            risk_band="RED",
+            details={
+                "total_score": score,
+                "depression_severity": risk_level,
+                "type": "PHQ9",
+            },
+        )
+
+    # 🔴 GAD-7 ORANGE/RED -> safety event
+    if assessment.type == "GAD7" and risk_level in ["ORANGE", "RED"]:
+        create_safety_event(
+            db=db,
+            student_id=profile.id,
+            trigger_type="GAD7",
+            risk_band=risk_level,
+            details={
+                "total_score": score,
+                "type": "GAD7",
             },
         )
 
